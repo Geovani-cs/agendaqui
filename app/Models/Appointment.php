@@ -17,6 +17,11 @@ class Appointment extends Model
 
     protected $casts = ['scheduled_at' => 'datetime'];
 
+    public function vehicleType()
+    {
+        return $this->belongsTo(VehicleType::class);
+    }
+
     // Campos calculados expostos no JSON.
     protected $appends = ['value', 'duration', 'date', 'time', 'is_late', 'commission_total'];
 

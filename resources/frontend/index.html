@@ -62,6 +62,10 @@ function Modal({ title, onClose, children, wide }) {
 const inputCls = "w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500";
 const btnPrimary = "bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors";
 const btnGhost = "text-sm border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg";
+function CurrencyInput({ value, onChange, className }) {
+  const display = (value === "" || value == null) ? "" : Number(value).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return <input value={display} inputMode="numeric" placeholder="0,00" onChange={(e)=>{ const d=e.target.value.replace(/[^0-9]/g,""); onChange(d ? parseInt(d,10)/100 : ""); }} className={className} />;
+}
 
 // ---------- Entrada ----------
 function NoSlug() {
@@ -277,6 +281,7 @@ function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved
   const [saving, setSaving] = useState(false); const [error, setError] = useState("");
   const [conflict, setConflict] = useState(null);
 
+  const filtered = vt ? services.filter(s=> String(s.vehicle_type_id)===vt || !s.vehicle_type_id) : services;
   const total = services.filter(s=>ids.includes(s.id)).reduce((t,s)=>t+Number(s.value||0),0);
   const dur = services.filter(s=>ids.includes(s.id)).reduce((t,s)=>t+Number(s.execution_time||0),0);
   function toggle(id){ setIds(ids.includes(id) ? ids.filter(x=>x!==id) : [...ids, id]); }
@@ -312,7 +317,7 @@ function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved
         <div><label className="block text-sm text-slate-600 mb-1.5">Placa</label>
           <input value={plate} onChange={(e)=>setPlate(e.target.value.toUpperCase())} className={inputCls} /></div>
         <div><label className="block text-sm text-slate-600 mb-1.5">Tipo de veículo</label>
-          <select value={vt} onChange={(e)=>setVt(e.target.value)} className={inputCls + " bg-white"}>
+          <select value={vt} onChange={(e)=>{ const nv=e.target.value; setVt(nv); const allow=(nv?services.filter(s=>String(s.vehicle_type_id)===nv||!s.vehicle_type_id):services).map(s=>s.id); setIds(ids.filter(id=>allow.includes(id))); }} className={inputCls + " bg-white"}>
             <option value="">— nenhum —</option>{vtypes.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
         <div><label className="block text-sm text-slate-600 mb-1.5">Modelo</label>
           <input value={model} onChange={(e)=>setModel(e.target.value)} className={inputCls} /></div>
@@ -323,8 +328,8 @@ function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved
       </div>
       <label className="block text-sm text-slate-600 mb-1.5">Serviços</label>
       <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 mb-3 max-h-44 overflow-y-auto">
-        {services.length===0 && <div className="px-3 py-4 text-sm text-slate-400 text-center">Cadastre serviços primeiro.</div>}
-        {services.map(s=>(
+        {filtered.length===0 && <div className="px-3 py-4 text-sm text-slate-400 text-center">Cadastre serviços primeiro.</div>}
+        {filtered.map(s=>(
           <label key={s.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50">
             <input type="checkbox" checked={ids.includes(s.id)} onChange={()=>toggle(s.id)} />
             <span className="flex-1 text-sm text-slate-700">{s.name}</span>
@@ -414,7 +419,7 @@ function Servicos({ token, user }) {
 }
 function ServicoForm({ token, vtypes, service, onClose, onSaved }) {
   const [name, setName] = useState(service ? service.name : "");
-  const [value, setValue] = useState(service ? String(service.value) : "");
+  const [value, setValue] = useState(service ? Number(service.value) : "");
   const [time, setTime] = useState(service ? String(service.execution_time) : "");
   const [vt, setVt] = useState(service && service.vehicle_type_id ? String(service.vehicle_type_id) : "");
   const [cod, setCod] = useState(service && service.cod ? service.cod : "");
@@ -432,7 +437,7 @@ function ServicoForm({ token, vtypes, service, onClose, onSaved }) {
       <input value={name} onChange={(e)=>setName(e.target.value)} autoFocus className={inputCls + " mb-4"} />
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div><label className="block text-sm text-slate-600 mb-1.5">Valor (R$)</label>
-          <input value={value} onChange={(e)=>setValue(e.target.value.replace(/[^0-9.,]/g,"").replace(",","."))} inputMode="decimal" className={inputCls} /></div>
+          <CurrencyInput value={value} onChange={setValue} className={inputCls} /></div>
         <div><label className="block text-sm text-slate-600 mb-1.5">Tempo (min)</label>
           <input value={time} onChange={(e)=>setTime(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" className={inputCls} /></div>
       </div>
