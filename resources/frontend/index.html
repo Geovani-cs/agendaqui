@@ -22,6 +22,7 @@ const slug = getSlug();
 const tokenKey = "agendaqui_token_" + (slug || "_root");
 const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function todayStr() { const d = new Date(); const p=(n)=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+function endTime(t, mins){ if(!t) return ''; const q=t.split(':'); const tot=(+q[0])*60+(+q[1])+(mins||0); const p=(n)=>String(n).padStart(2,'0'); return p(Math.floor(tot/60)%24)+':'+p(tot%60); }
 function waLink(phone, text) { let d=(phone||"").replace(/\D/g,""); if(d.length<=11) d="55"+d; return "https://wa.me/"+d+"?text="+encodeURIComponent(text||""); }
 const STATUS = {
   aguardando: { label:"Aguardando", cls:"bg-amber-50 text-amber-700 border-amber-200" },
@@ -122,7 +123,7 @@ function Layout({ user, slug, page, setPage, onLogout, children }) {
   const nav = [
     { id:"agendamentos", label:"Agendamentos" },
     { id:"servicos", label:"Serviços" },
-    { id:"tipos", label:"Tipos de veículo" },
+    { id:"tipos", label:"Tipos de automóveis" },
   ];
   return (
     <div className="min-h-screen">
@@ -310,17 +311,17 @@ function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved
         </div>
       )}
       <div className="grid grid-cols-2 gap-3 mb-3">
-        <div className="col-span-2"><label className="block text-sm text-slate-600 mb-1.5">Cliente</label>
+        <div className="col-span-2"><label className="block text-sm text-slate-600 mb-1.5">Nome do proprietário</label>
           <input value={owner} onChange={(e)=>setOwner(e.target.value)} autoFocus className={inputCls} /></div>
-        <div><label className="block text-sm text-slate-600 mb-1.5">Telefone</label>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Telefone (WhatsApp)</label>
           <input value={phone} onChange={(e)=>setPhone(e.target.value)} className={inputCls} /></div>
         <div><label className="block text-sm text-slate-600 mb-1.5">Placa</label>
-          <input value={plate} onChange={(e)=>setPlate(e.target.value.toUpperCase())} className={inputCls} /></div>
-        <div><label className="block text-sm text-slate-600 mb-1.5">Tipo de veículo</label>
+          <input value={plate} onChange={(e)=>setPlate(e.target.value.toUpperCase())} placeholder="ABC-1D23" className={inputCls} /></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Tipo de automóvel</label>
           <select value={vt} onChange={(e)=>{ const nv=e.target.value; setVt(nv); const allow=(nv?services.filter(s=>String(s.vehicle_type_id)===nv||!s.vehicle_type_id):services).map(s=>s.id); setIds(ids.filter(id=>allow.includes(id))); }} className={inputCls + " bg-white"}>
             <option value="">— nenhum —</option>{vtypes.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
         <div><label className="block text-sm text-slate-600 mb-1.5">Modelo</label>
-          <input value={model} onChange={(e)=>setModel(e.target.value)} className={inputCls} /></div>
+          <input value={model} onChange={(e)=>setModel(e.target.value)} placeholder="Ex.: Onix" className={inputCls} /></div>
         <div><label className="block text-sm text-slate-600 mb-1.5">Data</label>
           <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className={inputCls} /></div>
         <div><label className="block text-sm text-slate-600 mb-1.5">Hora</label>
@@ -339,7 +340,7 @@ function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved
         ))}
       </div>
       <div className="flex items-center justify-between text-sm mb-5">
-        <span className="text-slate-500">{ids.length} serviço(s) · {dur} min</span>
+        <span className="text-slate-500">{ids.length} serviço(s) · {dur} min · término previsto {endTime(time, dur)}</span>
         <span className="font-semibold text-slate-800">{brl(total)}</span>
       </div>
       <div className="flex justify-end gap-2">
@@ -441,7 +442,7 @@ function ServicoForm({ token, vtypes, service, onClose, onSaved }) {
         <div><label className="block text-sm text-slate-600 mb-1.5">Tempo (min)</label>
           <input value={time} onChange={(e)=>setTime(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" className={inputCls} /></div>
       </div>
-      <label className="block text-sm text-slate-600 mb-1.5">Tipo de veículo</label>
+      <label className="block text-sm text-slate-600 mb-1.5">Tipo de automóvel</label>
       <select value={vt} onChange={(e)=>setVt(e.target.value)} className={inputCls + " mb-4 bg-white"}>
         <option value="">— nenhum —</option>{vtypes.map((v)=><option key={v.id} value={v.id}>{v.name}</option>)}</select>
       <label className="block text-sm text-slate-600 mb-1.5">Código (opcional)</label>
@@ -476,7 +477,7 @@ function Tipos({ token, user }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-slate-800">Tipos de veículo</h2>
+        <h2 className="text-lg font-semibold text-slate-800">Tipos de automóveis</h2>
         {isAdmin && <button onClick={openNew} className={btnPrimary}>+ Novo tipo</button>}
       </div>
       {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
@@ -492,7 +493,7 @@ function Tipos({ token, user }) {
         ))}
       </div>
       {editing && (
-        <Modal title={editing==="new" ? "Novo tipo de veículo" : "Editar tipo"} onClose={()=>setEditing(null)}>
+        <Modal title={editing==="new" ? "Novo tipo de automóvel" : "Editar tipo"} onClose={()=>setEditing(null)}>
           {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
           <label className="block text-sm text-slate-600 mb-1.5">Nome</label>
           <input value={name} onChange={(e)=>setName(e.target.value)} autoFocus onKeyDown={(e)=>{ if(e.key==="Enter" && name) save(); }} className={inputCls + " mb-6"} />
