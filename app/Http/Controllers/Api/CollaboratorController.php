@@ -30,6 +30,13 @@ class CollaboratorController extends Controller
 
     public function destroy(Collaborator $collaborator)
     {
+        // Protege o histórico financeiro: não exclui quem já tem pagamentos.
+        if ($collaborator->payments()->exists()) {
+            return response()->json([
+                'message' => 'Não é possível excluir: há pagamentos vinculados a este colaborador. Remova os pagamentos antes.',
+            ], 422);
+        }
+
         $collaborator->delete();
         return response()->noContent();
     }

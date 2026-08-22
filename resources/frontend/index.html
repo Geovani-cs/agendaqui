@@ -141,6 +141,7 @@ function Login({ slug, onLogged }) {
 function Layout({ user, slug, page, setPage, onLogout, children }) {
   const nav = [
     { id:"agendamentos", label:"Agendamentos" },
+    ...(user.role==="admin" ? [{ id:"colaboradores", label:"Colaboradores" }] : []),
     { id:"servicos", label:"Serviços" },
     { id:"tipos", label:"Tipos de automóveis" },
   ];
@@ -558,6 +559,102 @@ function Tipos({ token, user }) {
 }
 
 // ---------- App ----------
+function Colaboradores({ token, user }) {
+  const isAdmin = user.role === "admin";
+  const [list, setList] = useState(null);
+  const [services, setServices] = useState([]);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState(null);
+  async function load() {
+    setError("");
+    try { const [c, s] = await Promise.all([api("/collaborators",{token}), api("/services",{token})]); setList(c); setServices(s); }
+    catch (e) { setError(firstError(e,"Erro ao carregar.")); setList([]); }
+  }
+  useEffect(()=>{ load(); }, []);
+  async function remove(c) {
+    if (!window.confirm('Excluir o colaborador "' + c.name + '"?')) return;
+    try { await api("/collaborators/"+c.id, { method:"DELETE", token }); load(); }
+    catch (e) { alert(firstError(e,"não foi possível excluir.")); }
+  }
+  if (list === null) return <div className="text-slate-400 text-sm">Carregando...</div>;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-slate-800">Colaboradores</h2>
+        {isAdmin && <button onClick={()=>setEditing("new")} className={btnPrimary}>+ Novo colaborador</button>}
+      </div>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
+        {list.length===0 && <div className="px-4 py-10 text-center text-sm text-slate-400">Nenhum colaborador cadastrado.</div>}
+        {list.map(c=>{
+          const ganho = (c.services||[]).reduce((t,s)=> t + Number((s.pivot&&s.pivot.commission)||0), 0);
+          return (
+            <div key={c.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-slate-800">{c.name}</div>
+                <div className="text-xs text-slate-400">{c.phone || "sem telefone"}{ganho>0 ? " " + String.fromCharCode(183) + " ganho config.: "+brl(ganho) : ""}</div>
+              </div>
+              {isAdmin && (<div className="flex items-center gap-2">
+                <button onClick={()=>setEditing(c)} className="text-sm text-blue-600 hover:underline">Editar</button>
+                <button onClick={()=>remove(c)} className="text-sm text-red-600 hover:underline">Excluir</button></div>)}
+            </div>
+          );
+        })}
+      </div>
+      {editing && <ColaboradorForm token={token} services={services} collab={editing==="new"?null:editing} onClose={()=>setEditing(null)} onSaved={()=>{ setEditing(null); load(); }} />}
+    </div>
+  );
+}
+
+function ColaboradorForm({ token, services, collab, onClose, onSaved }) {
+  const [name, setName] = useState(collab ? collab.name : "");
+  const [cpf, setCpf] = useState(collab && collab.cpf ? collab.cpf : "");
+  const [phone, setPhone] = useState(collab && collab.phone ? collab.phone : "");
+  const [pix, setPix] = useState(collab && collab.pix ? collab.pix : "");
+  const initComm = {};
+  if (collab) (collab.services||[]).forEach(s=>{ initComm[s.id] = (s.pivot && s.pivot.commission)!=null ? Number(s.pivot.commission) : ""; });
+  const [comm, setComm] = useState(initComm);
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  function setC(id, v){ setComm({...comm, [id]: v}); }
+  async function save() {
+    setError(""); setSaving(true);
+    const commissions = {}; Object.keys(comm).forEach(k=>{ if(comm[k]!=="" && comm[k]!=null) commissions[k]=comm[k]; });
+    const body = { name, cpf:cpf||null, phone:phone||null, pix:pix||null, commissions };
+    try { if(collab) await api("/collaborators/"+collab.id,{method:"PUT",token,body}); else await api("/collaborators",{method:"POST",token,body}); onSaved(); }
+    catch(e){ setError(firstError(e,"não foi possível salvar.")); setSaving(false); }
+  }
+  return (
+    <Modal title={collab ? "Editar colaborador" : "Novo colaborador"} onClose={onClose} wide>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="col-span-2"><label className="block text-sm text-slate-600 mb-1.5">Nome</label>
+          <input value={name} onChange={(e)=>setName(e.target.value)} autoFocus className={inputCls} /></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">CPF</label>
+          <input value={cpf} onChange={(e)=>setCpf(e.target.value)} className={inputCls} /></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Telefone</label>
+          <input value={phone} onChange={(e)=>setPhone(e.target.value)} className={inputCls} /></div>
+        <div className="col-span-2"><label className="block text-sm text-slate-600 mb-1.5">Chave PIX</label>
+          <input value={pix} onChange={(e)=>setPix(e.target.value)} className={inputCls} /></div>
+      </div>
+      <label className="block text-sm font-medium text-slate-700 mb-1">Comissões por serviço</label>
+      <p className="text-xs text-slate-400 mb-2">Quanto o colaborador ganha em cada serviço (deixe vazio se não executa).</p>
+      <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 mb-6 max-h-52 overflow-y-auto">
+        {services.length===0 && <div className="px-3 py-4 text-sm text-slate-400 text-center">Cadastre serviços primeiro.</div>}
+        {services.map(s=>(
+          <div key={s.id} className="flex items-center gap-3 px-3 py-2">
+            <span className="flex-1 text-sm text-slate-700">{s.name}</span>
+            <div className="w-28"><CurrencyInput value={comm[s.id]!=null?comm[s.id]:""} onChange={(v)=>setC(s.id, v)} className={inputCls} /></div>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className={btnGhost}>Cancelar</button>
+        <button onClick={save} disabled={saving || !name} className={btnPrimary}>{saving ? "Salvando..." : "Salvar"}</button>
+      </div>
+    </Modal>
+  );
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(tokenKey));
   const [user, setUser] = useState(null);
@@ -574,6 +671,7 @@ function App() {
     <Layout user={user} slug={slug} page={page} setPage={setPage}
       onLogout={()=>{ api("/logout",{method:"POST",token}).catch(()=>{}); localStorage.removeItem(tokenKey); setToken(null); setUser(null); }}>
       {page==="agendamentos" && <Agendamentos token={token} user={user} />}
+      {page==="colaboradores" && <Colaboradores token={token} user={user} />}
       {page==="servicos" && <Servicos token={token} user={user} />}
       {page==="tipos" && <Tipos token={token} user={user} />}
     </Layout>
