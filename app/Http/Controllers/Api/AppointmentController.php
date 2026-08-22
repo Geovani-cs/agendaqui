@@ -11,16 +11,15 @@ use App\Services\ScheduleService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 class AppointmentController extends Controller
 {
     public function __construct(private ScheduleService $schedule) {}
 
-    // Lista/consulta com filtros: name, plate, vehicle_type_id, collaborator_id, from, to, status.
+    // Lista/consulta com filtros. Fotos vêm "leves" (só id) — o conteúdo é carregado no show().
     public function index(Request $request)
     {
-        $q = Appointment::with(['services', 'collaborator', 'photos', 'vehicleType']);
+        $q = Appointment::with(['services', 'collaborator', 'vehicleType', 'photos:id,appointment_id']);
 
         if ($request->filled('name')) {
             $q->where('owner_name', 'like', '%' . $request->name . '%');
@@ -49,13 +48,18 @@ class AppointmentController extends Controller
         return $q->orderByDesc('scheduled_at')->get();
     }
 
+    // Detalhe com as fotos completas (data URL base64).
+    public function show(Appointment $appointment)
+    {
+        return $appointment->load(['services', 'collaborator', 'vehicleType', 'photos']);
+    }
+
     public function store(Request $request)
     {
         $data = $this->validated($request);
         $start = Carbon::parse($data['date'] . ' ' . $data['time']);
         $duration = $this->schedule->durationFor($data['service_ids']);
 
-        // Conflito de agenda — só bloqueia se o cliente não pediu para ignorar.
         if (! $request->boolean('ignore_conflict')) {
             $conflict = $this->schedule->conflict($start, $duration);
             if ($conflict) {
@@ -90,7 +94,7 @@ class AppointmentController extends Controller
         });
 
         return response()->json([
-            'appointment' => $appointment->load(['services', 'collaborator', 'photos']),
+            'appointment' => $appointment->load(['services', 'collaborator', 'photos:id,appointment_id']),
             'whatsapp' => $this->schedulingMessage($appointment),
         ], 201);
     }
@@ -111,7 +115,7 @@ class AppointmentController extends Controller
             }
         }
 
-        DB::transaction(function () use ($appointment, $data, $start) {
+        DB::transaction(function () use ($appointment, $data, $start, $request) {
             $appointment->update([
                 'owner_name' => $data['owner_name'],
                 'phone' => $data['phone'],
@@ -121,9 +125,10 @@ class AppointmentController extends Controller
                 'scheduled_at' => $start,
             ]);
             $this->attachServices($appointment, $data['service_ids'], $appointment->collaborator);
+            $this->savePhotos($appointment, $request->input('photos', [])); // anexa fotos novas
         });
 
-        return $appointment->load(['services', 'collaborator', 'photos']);
+        return $appointment->load(['services', 'collaborator', 'photos:id,appointment_id']);
     }
 
     public function destroy(Appointment $appointment)
@@ -159,7 +164,6 @@ class AppointmentController extends Controller
                 'collaborator_id' => $data['collaborator_id'] ?? null,
             ]);
 
-            // Snapshot da comissão por serviço, conforme o ganho definido para o colaborador.
             $collaborator = $data['collaborator_id']
                 ? Collaborator::with('services')->find($data['collaborator_id'])
                 : null;
@@ -194,7 +198,6 @@ class AppointmentController extends Controller
         ]);
     }
 
-    // Anexa serviços com snapshot de preço, tempo e (opcional) comissão do colaborador.
     private function attachServices(Appointment $appointment, array $serviceIds, ?Collaborator $collaborator = null): void
     {
         $collaborator?->loadMissing('services');
@@ -211,18 +214,14 @@ class AppointmentController extends Controller
         $appointment->services()->sync($sync);
     }
 
-    // Salva fotos enviadas em base64 (data URL) no disco público.
+    // Opcao B: guarda a imagem (data URL base64) direto no banco.
     private function savePhotos(Appointment $appointment, array $photos): void
     {
         foreach ($photos as $photo) {
             if (! is_string($photo) || ! str_contains($photo, 'base64,')) {
                 continue;
             }
-            [$meta, $content] = explode('base64,', $photo, 2);
-            $ext = str_contains($meta, 'png') ? 'png' : 'jpg';
-            $path = 'appointments/' . $appointment->id . '/' . uniqid() . '.' . $ext;
-            Storage::disk('public')->put($path, base64_decode($content));
-            $appointment->photos()->create(['path' => $path]);
+            $appointment->photos()->create(['path' => '', 'data' => $photo]);
         }
     }
 

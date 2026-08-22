@@ -22,6 +22,25 @@ const slug = getSlug();
 const tokenKey = "agendaqui_token_" + (slug || "_root");
 const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function todayStr() { const d = new Date(); const p=(n)=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+function fileToDataURL(file, max) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const m = max || 1000;
+        if (width > m || height > m) { const r = Math.min(m/width, m/height); width = Math.round(width*r); height = Math.round(height*r); }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 function endTime(t, mins){ if(!t) return ''; const q=t.split(':'); const tot=(+q[0])*60+(+q[1])+(mins||0); const p=(n)=>String(n).padStart(2,'0'); return p(Math.floor(tot/60)%24)+':'+p(tot%60); }
 function waLink(phone, text) { let d=(phone||"").replace(/\D/g,""); if(d.length<=11) d="55"+d; return "https://wa.me/"+d+"?text="+encodeURIComponent(text||""); }
 const STATUS = {
@@ -169,6 +188,21 @@ function WhatsApp({ wa, onClose }) {
 }
 
 // ---------- Agendamentos ----------
+function PhotosModal({ token, appt, onClose }) {
+  const [photos, setPhotos] = useState(null);
+  useEffect(()=>{ api("/appointments/"+appt.id, { token }).then(r=>setPhotos(r.photos||[])).catch(()=>setPhotos([])); }, []);
+  return (
+    <Modal title="Fotos do veículo" onClose={onClose} wide>
+      {photos===null ? <div className="text-slate-400 text-sm">Carregando...</div> : (
+        photos.length===0 ? <div className="text-slate-400 text-sm">Nenhuma foto.</div> : (
+          <div className="grid grid-cols-3 gap-2">
+            {photos.map(p=><img key={p.id} src={p.data} className="w-full h-28 object-cover rounded-lg border border-slate-200" />)}
+          </div>
+        )
+      )}
+    </Modal>
+  );
+}
 function Agendamentos({ token, user }) {
   const isAdmin = user.role === "admin";
   const [date, setDate] = useState(todayStr());
@@ -180,6 +214,7 @@ function Agendamentos({ token, user }) {
   const [editing, setEditing] = useState(null);     // null | 'new' | appt
   const [completing, setCompleting] = useState(null); // null | appt
   const [wa, setWa] = useState(null);
+  const [viewingPhotos, setViewingPhotos] = useState(null);
 
   async function loadBase() {
     try {
@@ -218,7 +253,7 @@ function Agendamentos({ token, user }) {
           {list.map((a)=>(
             <ApptCard key={a.id} a={a} isAdmin={isAdmin}
               onStart={()=>start(a)} onComplete={()=>setCompleting(a)} onCancel={()=>cancel(a)}
-              onEdit={()=>setEditing(a)} onRemove={()=>remove(a)} />
+              onEdit={()=>setEditing(a)} onRemove={()=>remove(a)} onPhotos={()=>setViewingPhotos(a)} />
           ))}
         </div>
       )}
@@ -228,11 +263,12 @@ function Agendamentos({ token, user }) {
       {completing && <CompleteModal token={token} appt={completing} collabs={collabs}
         onClose={()=>setCompleting(null)} onDone={(res)=>{ setCompleting(null); if(res && res.whatsapp) setWa(res.whatsapp); load(); }} />}
       {wa && <WhatsApp wa={wa} onClose={()=>setWa(null)} />}
+      {viewingPhotos && <PhotosModal token={token} appt={viewingPhotos} onClose={()=>setViewingPhotos(null)} />}
     </div>
   );
 }
 
-function ApptCard({ a, isAdmin, onStart, onComplete, onCancel, onEdit, onRemove }) {
+function ApptCard({ a, isAdmin, onStart, onComplete, onCancel, onEdit, onRemove, onPhotos }) {
   const st = STATUS[a.status] || STATUS.aguardando;
   const dim = a.status === "cancelado";
   return (
@@ -252,7 +288,7 @@ function ApptCard({ a, isAdmin, onStart, onComplete, onCancel, onEdit, onRemove 
             {a.phone}{a.plate ? " · " + a.plate : ""}{a.model ? " · " + a.model : ""}
           </div>
           <div className="text-sm text-slate-600 mt-1">{(a.services||[]).map(s=>s.name).join(", ")}</div>
-          <div className="text-sm font-medium text-slate-800 mt-1">{brl(a.value)}
+          <div className="text-sm font-medium text-slate-800 mt-1">{brl(a.value)}{a.photos && a.photos.length>0 && <button onClick={onPhotos} className="ml-2 text-xs font-normal text-blue-600 hover:underline">Fotos ({a.photos.length})</button>}
             {a.status==="concluido" && a.collaborator ? <span className="text-xs font-normal text-slate-400"> · {a.collaborator.name}</span> : null}
           </div>
         </div>
@@ -263,6 +299,7 @@ function ApptCard({ a, isAdmin, onStart, onComplete, onCancel, onEdit, onRemove 
           {a.status === "andamento" && <button onClick={onComplete} className="text-sm bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg">Concluir</button>}
           <button onClick={onEdit} className="text-sm border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg">Editar</button>
           <button onClick={onCancel} className="text-sm border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg">Cancelar</button>
+          
           {isAdmin && <button onClick={onRemove} className="text-sm text-red-600 hover:underline px-2 py-1.5">Excluir</button>}
         </div>
       )}
@@ -281,6 +318,8 @@ function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved
   const [ids, setIds] = useState(appt ? (appt.services||[]).map(s=>s.id) : []);
   const [saving, setSaving] = useState(false); const [error, setError] = useState("");
   const [conflict, setConflict] = useState(null);
+  const [photos, setPhotos] = useState([]);
+  async function addPhotos(files){ const arr=[]; for(const fl of Array.from(files)){ arr.push(await fileToDataURL(fl, 1000)); } setPhotos(p=>[...p, ...arr]); }
 
   const filtered = vt ? services.filter(s=> String(s.vehicle_type_id)===vt || !s.vehicle_type_id) : services;
   const total = services.filter(s=>ids.includes(s.id)).reduce((t,s)=>t+Number(s.value||0),0);
@@ -289,7 +328,7 @@ function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved
 
   async function save(ignore) {
     setError(""); setConflict(null); setSaving(true);
-    const body = { owner_name:owner, phone, plate:plate||null, model:model||null, vehicle_type_id:vt||null, date, time, service_ids:ids, ignore_conflict: !!ignore };
+    const body = { owner_name:owner, phone, plate:plate||null, model:model||null, vehicle_type_id:vt||null, date, time, service_ids:ids, photos, ignore_conflict: !!ignore };
     try {
       let res;
       if (appt) res = await api("/appointments/"+appt.id, { method:"PUT", token, body });
@@ -338,6 +377,19 @@ function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved
             <span className="text-sm text-slate-600 w-20 text-right">{brl(s.value)}</span>
           </label>
         ))}
+      </div>
+      <label className="block text-sm text-slate-600 mb-1.5">Fotos do veículo (opcional)</label>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {photos.map((p,idx)=>(
+          <div key={idx} className="relative">
+            <img src={p} className="w-16 h-16 object-cover rounded-lg border border-slate-200" />
+            <button type="button" onClick={()=>setPhotos(photos.filter((_,x)=>x!==idx))} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 text-xs leading-none">x</button>
+          </div>
+        ))}
+        <label className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center text-2xl text-slate-400 cursor-pointer hover:border-blue-400">
+          +
+          <input type="file" accept="image/*" multiple className="hidden" onChange={(ev)=>addPhotos(ev.target.files)} />
+        </label>
       </div>
       <div className="flex items-center justify-between text-sm mb-5">
         <span className="text-slate-500">{ids.length} serviço(s) · {dur} min · término previsto {endTime(time, dur)}</span>
