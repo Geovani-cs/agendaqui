@@ -386,10 +386,8 @@ function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved
             <button type="button" onClick={()=>setPhotos(photos.filter((_,x)=>x!==idx))} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 text-xs leading-none">x</button>
           </div>
         ))}
-        <label className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center text-2xl text-slate-400 cursor-pointer hover:border-blue-400">
-          +
-          <input type="file" accept="image/*" multiple className="hidden" onChange={(ev)=>addPhotos(ev.target.files)} />
-        </label>
+        <label className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center text-[11px] font-medium text-slate-500 text-center cursor-pointer hover:border-blue-400 hover:text-blue-500">Câmera<input type="file" accept="image/*" capture="environment" className="hidden" onChange={(ev)=>addPhotos(ev.target.files)} /></label>
+        <label className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center text-[11px] font-medium text-slate-500 text-center cursor-pointer hover:border-blue-400 hover:text-blue-500">Galeria<input type="file" accept="image/*" multiple className="hidden" onChange={(ev)=>addPhotos(ev.target.files)} /></label>
       </div>
       <div className="flex items-center justify-between text-sm mb-5">
         <span className="text-slate-500">{ids.length} serviço(s) · {dur} min · término previsto {endTime(time, dur)}</span>
