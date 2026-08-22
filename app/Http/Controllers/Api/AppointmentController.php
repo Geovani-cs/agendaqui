@@ -139,6 +139,13 @@ class AppointmentController extends Controller
         return $appointment->load(['services', 'collaborator']);
     }
 
+    // Cancela o agendamento (soft: preserva o registro, sai do faturamento).
+    public function cancel(Appointment $appointment)
+    {
+        $appointment->update(['status' => 'cancelado']);
+        return $appointment->load(['services', 'collaborator']);
+    }
+
     // Conclui o serviço, registra o colaborador e a comissão (snapshot).
     public function complete(Request $request, Appointment $appointment)
     {

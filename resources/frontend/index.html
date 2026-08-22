@@ -21,6 +21,14 @@ function getSlug() { return window.location.pathname.split("/").filter(Boolean)[
 const slug = getSlug();
 const tokenKey = "agendaqui_token_" + (slug || "_root");
 const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function todayStr() { const d = new Date(); const p=(n)=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+function waLink(phone, text) { let d=(phone||"").replace(/\D/g,""); if(d.length<=11) d="55"+d; return "https://wa.me/"+d+"?text="+encodeURIComponent(text||""); }
+const STATUS = {
+  aguardando: { label:"Aguardando", cls:"bg-amber-50 text-amber-700 border-amber-200" },
+  andamento:  { label:"Em andamento", cls:"bg-blue-50 text-blue-700 border-blue-200" },
+  concluido:  { label:"Concluído", cls:"bg-emerald-50 text-emerald-700 border-emerald-200" },
+  cancelado:  { label:"Cancelado", cls:"bg-slate-100 text-slate-500 border-slate-200" },
+};
 
 async function api(path, opts = {}) {
   const { method = "GET", body, token } = opts;
@@ -38,10 +46,10 @@ function firstError(e, fallback) {
 }
 
 // ---------- UI base ----------
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, wide }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={(e)=>{ if(e.target===e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl">
+      <div className={"bg-white rounded-2xl w-full " + (wide?"max-w-lg":"max-w-md") + " p-6 shadow-xl max-h-[90vh] overflow-y-auto"}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
@@ -55,7 +63,7 @@ const inputCls = "w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg 
 const btnPrimary = "bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors";
 const btnGhost = "text-sm border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg";
 
-// ---------- Telas de entrada ----------
+// ---------- Entrada ----------
 function NoSlug() {
   const [s, setS] = useState("");
   return (
@@ -108,9 +116,9 @@ function Login({ slug, onLogged }) {
 // ---------- Layout ----------
 function Layout({ user, slug, page, setPage, onLogout, children }) {
   const nav = [
-    { id: "inicio", label: "Início" },
-    { id: "servicos", label: "Serviços" },
-    { id: "tipos", label: "Tipos de veículo" },
+    { id:"agendamentos", label:"Agendamentos" },
+    { id:"servicos", label:"Serviços" },
+    { id:"tipos", label:"Tipos de veículo" },
   ];
   return (
     <div className="min-h-screen">
@@ -127,10 +135,10 @@ function Layout({ user, slug, page, setPage, onLogout, children }) {
               <button onClick={onLogout} className="text-sm text-slate-500 hover:text-slate-800">Sair</button>
             </div>
           </div>
-          <nav className="flex gap-1 -mb-px">
+          <nav className="flex gap-1 -mb-px overflow-x-auto">
             {nav.map((n)=>(
               <button key={n.id} onClick={()=>setPage(n.id)}
-                className={"px-3 py-2 text-sm border-b-2 " + (page===n.id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-800")}>
+                className={"px-3 py-2 text-sm whitespace-nowrap border-b-2 " + (page===n.id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-800")}>
                 {n.label}
               </button>
             ))}
@@ -142,13 +150,223 @@ function Layout({ user, slug, page, setPage, onLogout, children }) {
   );
 }
 
-function Inicio({ user }) {
+// ---------- WhatsApp ----------
+function WhatsApp({ wa, onClose }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-6">
-      <h2 className="text-lg font-semibold text-slate-800">Bem-vindo, {user.name}!</h2>
-      <p className="text-sm text-slate-500 mt-1">Perfil: {user.role}</p>
-      <p className="text-sm text-slate-500 mt-4">Use o menu acima para gerenciar seus serviços e tipos de veículo. As telas de agendamentos e financeiro chegam nas próximas etapas.</p>
+    <Modal title="Mensagem para o cliente" onClose={onClose}>
+      <textarea readOnly value={wa.text} rows={6} className={inputCls + " mb-4 resize-none"} />
+      <div className="flex justify-end gap-2">
+        <button onClick={()=>{ navigator.clipboard && navigator.clipboard.writeText(wa.text); }} className={btnGhost}>Copiar</button>
+        <a href={waLink(wa.phone, wa.text)} target="_blank" rel="noreferrer" className={btnPrimary + " inline-block"}>Abrir no WhatsApp</a>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------- Agendamentos ----------
+function Agendamentos({ token, user }) {
+  const isAdmin = user.role === "admin";
+  const [date, setDate] = useState(todayStr());
+  const [list, setList] = useState(null);
+  const [services, setServices] = useState([]);
+  const [collabs, setCollabs] = useState([]);
+  const [vtypes, setVtypes] = useState([]);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState(null);     // null | 'new' | appt
+  const [completing, setCompleting] = useState(null); // null | appt
+  const [wa, setWa] = useState(null);
+
+  async function loadBase() {
+    try {
+      const [s, c, v] = await Promise.all([api("/services",{token}), api("/collaborators",{token}), api("/vehicle-types",{token})]);
+      setServices(s); setCollabs(c); setVtypes(v);
+    } catch (e) {}
+  }
+  async function load() {
+    setError("");
+    try {
+      const r = await api("/appointments?from=" + date + "&to=" + date, { token });
+      r.sort((a,b)=> (a.scheduled_at||"").localeCompare(b.scheduled_at||""));
+      setList(r);
+    } catch (e) { setError(firstError(e,"Erro ao carregar.")); setList([]); }
+  }
+  useEffect(()=>{ loadBase(); }, []);
+  useEffect(()=>{ setList(null); load(); }, [date]);
+
+  async function start(a){ try{ await api("/appointments/"+a.id+"/start",{method:"POST",token}); load(); }catch(e){ alert(firstError(e,"Erro.")); } }
+  async function cancel(a){ if(!window.confirm("Cancelar o agendamento de "+a.owner_name+"?")) return; try{ await api("/appointments/"+a.id+"/cancel",{method:"POST",token}); load(); }catch(e){ alert(firstError(e,"Erro.")); } }
+  async function remove(a){ if(!window.confirm("Excluir definitivamente este agendamento?")) return; try{ await api("/appointments/"+a.id,{method:"DELETE",token}); load(); }catch(e){ alert(firstError(e,"Erro.")); } }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <h2 className="text-lg font-semibold text-slate-800">Agendamentos</h2>
+        <div className="flex items-center gap-2">
+          <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className={inputCls + " w-auto"} />
+          <button onClick={()=>setEditing("new")} className={btnPrimary}>+ Novo</button>
+        </div>
+      </div>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      {list === null ? <div className="text-slate-400 text-sm">Carregando…</div> : (
+        <div className="space-y-3">
+          {list.length === 0 && <div className="bg-white rounded-2xl border border-slate-200 px-4 py-10 text-center text-sm text-slate-400">Nenhum agendamento neste dia.</div>}
+          {list.map((a)=>(
+            <ApptCard key={a.id} a={a} isAdmin={isAdmin}
+              onStart={()=>start(a)} onComplete={()=>setCompleting(a)} onCancel={()=>cancel(a)}
+              onEdit={()=>setEditing(a)} onRemove={()=>remove(a)} />
+          ))}
+        </div>
+      )}
+
+      {editing && <ApptForm token={token} services={services} vtypes={vtypes} appt={editing==="new"?null:editing} defaultDate={date}
+        onClose={()=>setEditing(null)} onSaved={(res)=>{ setEditing(null); if(res && res.whatsapp) setWa(res.whatsapp); load(); }} />}
+      {completing && <CompleteModal token={token} appt={completing} collabs={collabs}
+        onClose={()=>setCompleting(null)} onDone={(res)=>{ setCompleting(null); if(res && res.whatsapp) setWa(res.whatsapp); load(); }} />}
+      {wa && <WhatsApp wa={wa} onClose={()=>setWa(null)} />}
     </div>
+  );
+}
+
+function ApptCard({ a, isAdmin, onStart, onComplete, onCancel, onEdit, onRemove }) {
+  const st = STATUS[a.status] || STATUS.aguardando;
+  const dim = a.status === "cancelado";
+  return (
+    <div className={"bg-white rounded-2xl border border-slate-200 p-4 " + (dim?"opacity-60":"")}>
+      <div className="flex items-start gap-3">
+        <div className="text-center w-14 shrink-0">
+          <div className="text-lg font-semibold text-slate-800">{a.time}</div>
+          <div className="text-xs text-slate-400">{a.duration}min</div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-slate-800">{a.owner_name}</span>
+            <span className={"text-xs px-2 py-0.5 rounded-full border " + st.cls}>{st.label}</span>
+            {a.is_late && <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">atrasado</span>}
+          </div>
+          <div className="text-xs text-slate-400 mt-0.5">
+            {a.phone}{a.plate ? " · " + a.plate : ""}{a.model ? " · " + a.model : ""}
+          </div>
+          <div className="text-sm text-slate-600 mt-1">{(a.services||[]).map(s=>s.name).join(", ")}</div>
+          <div className="text-sm font-medium text-slate-800 mt-1">{brl(a.value)}
+            {a.status==="concluido" && a.collaborator ? <span className="text-xs font-normal text-slate-400"> · {a.collaborator.name}</span> : null}
+          </div>
+        </div>
+      </div>
+      {a.status !== "concluido" && a.status !== "cancelado" && (
+        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
+          {a.status === "aguardando" && <button onClick={onStart} className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg">Iniciar</button>}
+          {a.status === "andamento" && <button onClick={onComplete} className="text-sm bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg">Concluir</button>}
+          <button onClick={onEdit} className="text-sm border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg">Editar</button>
+          <button onClick={onCancel} className="text-sm border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg">Cancelar</button>
+          {isAdmin && <button onClick={onRemove} className="text-sm text-red-600 hover:underline px-2 py-1.5">Excluir</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApptForm({ token, services, vtypes, appt, defaultDate, onClose, onSaved }) {
+  const [owner, setOwner] = useState(appt ? appt.owner_name : "");
+  const [phone, setPhone] = useState(appt ? appt.phone : "");
+  const [plate, setPlate] = useState(appt && appt.plate ? appt.plate : "");
+  const [model, setModel] = useState(appt && appt.model ? appt.model : "");
+  const [vt, setVt] = useState(appt && appt.vehicle_type_id ? String(appt.vehicle_type_id) : "");
+  const [date, setDate] = useState(appt ? appt.date : defaultDate);
+  const [time, setTime] = useState(appt ? appt.time : "08:00");
+  const [ids, setIds] = useState(appt ? (appt.services||[]).map(s=>s.id) : []);
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  const [conflict, setConflict] = useState(null);
+
+  const total = services.filter(s=>ids.includes(s.id)).reduce((t,s)=>t+Number(s.value||0),0);
+  const dur = services.filter(s=>ids.includes(s.id)).reduce((t,s)=>t+Number(s.execution_time||0),0);
+  function toggle(id){ setIds(ids.includes(id) ? ids.filter(x=>x!==id) : [...ids, id]); }
+
+  async function save(ignore) {
+    setError(""); setConflict(null); setSaving(true);
+    const body = { owner_name:owner, phone, plate:plate||null, model:model||null, vehicle_type_id:vt||null, date, time, service_ids:ids, ignore_conflict: !!ignore };
+    try {
+      let res;
+      if (appt) res = await api("/appointments/"+appt.id, { method:"PUT", token, body });
+      else res = await api("/appointments", { method:"POST", token, body });
+      onSaved(res);
+    } catch (e) {
+      if (e.status === 409 && e.data && e.data.conflict) { setConflict(e.data.with || {}); setSaving(false); }
+      else { setError(firstError(e,"Não foi possível salvar.")); setSaving(false); }
+    }
+  }
+
+  return (
+    <Modal title={appt ? "Editar agendamento" : "Novo agendamento"} onClose={onClose} wide>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      {conflict && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-3 py-2 mb-4">
+          Conflito de horário{conflict.owner_name ? " com " + conflict.owner_name : ""}{conflict.time ? " (" + conflict.time + ")" : ""}.
+          <button onClick={()=>save(true)} className="ml-2 underline font-medium">Agendar mesmo assim</button>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="col-span-2"><label className="block text-sm text-slate-600 mb-1.5">Cliente</label>
+          <input value={owner} onChange={(e)=>setOwner(e.target.value)} autoFocus className={inputCls} /></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Telefone</label>
+          <input value={phone} onChange={(e)=>setPhone(e.target.value)} className={inputCls} /></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Placa</label>
+          <input value={plate} onChange={(e)=>setPlate(e.target.value.toUpperCase())} className={inputCls} /></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Tipo de veículo</label>
+          <select value={vt} onChange={(e)=>setVt(e.target.value)} className={inputCls + " bg-white"}>
+            <option value="">— nenhum —</option>{vtypes.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Modelo</label>
+          <input value={model} onChange={(e)=>setModel(e.target.value)} className={inputCls} /></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Data</label>
+          <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className={inputCls} /></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Hora</label>
+          <input type="time" value={time} onChange={(e)=>setTime(e.target.value)} className={inputCls} /></div>
+      </div>
+      <label className="block text-sm text-slate-600 mb-1.5">Serviços</label>
+      <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 mb-3 max-h-44 overflow-y-auto">
+        {services.length===0 && <div className="px-3 py-4 text-sm text-slate-400 text-center">Cadastre serviços primeiro.</div>}
+        {services.map(s=>(
+          <label key={s.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50">
+            <input type="checkbox" checked={ids.includes(s.id)} onChange={()=>toggle(s.id)} />
+            <span className="flex-1 text-sm text-slate-700">{s.name}</span>
+            <span className="text-xs text-slate-400">{s.execution_time}min</span>
+            <span className="text-sm text-slate-600 w-20 text-right">{brl(s.value)}</span>
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center justify-between text-sm mb-5">
+        <span className="text-slate-500">{ids.length} serviço(s) · {dur} min</span>
+        <span className="font-semibold text-slate-800">{brl(total)}</span>
+      </div>
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className={btnGhost}>Cancelar</button>
+        <button onClick={()=>save(false)} disabled={saving || !owner || !phone || ids.length===0} className={btnPrimary}>{saving ? "Salvando…" : "Salvar"}</button>
+      </div>
+    </Modal>
+  );
+}
+
+function CompleteModal({ token, appt, collabs, onClose, onDone }) {
+  const [cid, setCid] = useState("");
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  async function done() {
+    setSaving(true); setError("");
+    try { const res = await api("/appointments/"+appt.id+"/complete", { method:"POST", token, body:{ collaborator_id: cid || null } }); onDone(res); }
+    catch (e) { setError(firstError(e,"Erro ao concluir.")); setSaving(false); }
+  }
+  return (
+    <Modal title="Concluir serviço" onClose={onClose}>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      <p className="text-sm text-slate-500 mb-4">Cliente: <span className="text-slate-700 font-medium">{appt.owner_name}</span> · {brl(appt.value)}</p>
+      <label className="block text-sm text-slate-600 mb-1.5">Colaborador que executou (opcional)</label>
+      <select value={cid} onChange={(e)=>setCid(e.target.value)} className={inputCls + " mb-6 bg-white"}>
+        <option value="">— não informar —</option>
+        {collabs.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className={btnGhost}>Cancelar</button>
+        <button onClick={done} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg">{saving ? "Concluindo…" : "Concluir"}</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -156,23 +374,18 @@ function Inicio({ user }) {
 function Servicos({ token, user }) {
   const isAdmin = user.role === "admin";
   const [list, setList] = useState(null); const [vtypes, setVtypes] = useState([]);
-  const [error, setError] = useState(""); const [editing, setEditing] = useState(null); // null | 'new' | service
-
+  const [error, setError] = useState(""); const [editing, setEditing] = useState(null);
   async function load() {
     setError("");
     try { const [s, v] = await Promise.all([api("/services", { token }), api("/vehicle-types", { token })]); setList(s); setVtypes(v); }
     catch (e) { setError(firstError(e, "Erro ao carregar.")); setList([]); }
   }
   useEffect(() => { load(); }, []);
-
   async function remove(s) {
     if (!window.confirm("Excluir o serviço \"" + s.name + "\"?")) return;
-    try { await api("/services/" + s.id, { method:"DELETE", token }); load(); }
-    catch (e) { alert(firstError(e, "Não foi possível excluir.")); }
+    try { await api("/services/" + s.id, { method:"DELETE", token }); load(); } catch (e) { alert(firstError(e, "Não foi possível excluir.")); }
   }
-
   if (list === null) return <div className="text-slate-400 text-sm">Carregando…</div>;
-
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -189,12 +402,9 @@ function Servicos({ token, user }) {
               <div className="text-xs text-slate-400">{(s.vehicle_type && s.vehicle_type.name) || (s.vehicleType && s.vehicleType.name) || "sem tipo"} · {s.execution_time} min</div>
             </div>
             <div className="text-sm text-slate-700 w-24 text-right">{brl(s.value)}</div>
-            {isAdmin && (
-              <div className="flex items-center gap-2">
-                <button onClick={()=>setEditing(s)} className="text-sm text-blue-600 hover:underline">Editar</button>
-                <button onClick={()=>remove(s)} className="text-sm text-red-600 hover:underline">Excluir</button>
-              </div>
-            )}
+            {isAdmin && (<div className="flex items-center gap-2">
+              <button onClick={()=>setEditing(s)} className="text-sm text-blue-600 hover:underline">Editar</button>
+              <button onClick={()=>remove(s)} className="text-sm text-red-600 hover:underline">Excluir</button></div>)}
           </div>
         ))}
       </div>
@@ -202,7 +412,6 @@ function Servicos({ token, user }) {
     </div>
   );
 }
-
 function ServicoForm({ token, vtypes, service, onClose, onSaved }) {
   const [name, setName] = useState(service ? service.name : "");
   const [value, setValue] = useState(service ? String(service.value) : "");
@@ -210,37 +419,26 @@ function ServicoForm({ token, vtypes, service, onClose, onSaved }) {
   const [vt, setVt] = useState(service && service.vehicle_type_id ? String(service.vehicle_type_id) : "");
   const [cod, setCod] = useState(service && service.cod ? service.cod : "");
   const [saving, setSaving] = useState(false); const [error, setError] = useState("");
-
   async function save() {
     setError(""); setSaving(true);
     const body = { name, value: Number(value), execution_time: parseInt(time || "0", 10), vehicle_type_id: vt || null, cod: cod || null };
-    try {
-      if (service) await api("/services/" + service.id, { method:"PUT", token, body });
-      else await api("/services", { method:"POST", token, body });
-      onSaved();
-    } catch (e) { setError(firstError(e, "Não foi possível salvar.")); setSaving(false); }
+    try { if (service) await api("/services/" + service.id, { method:"PUT", token, body }); else await api("/services", { method:"POST", token, body }); onSaved(); }
+    catch (e) { setError(firstError(e, "Não foi possível salvar.")); setSaving(false); }
   }
-
   return (
     <Modal title={service ? "Editar serviço" : "Novo serviço"} onClose={onClose}>
       {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
       <label className="block text-sm text-slate-600 mb-1.5">Nome</label>
       <input value={name} onChange={(e)=>setName(e.target.value)} autoFocus className={inputCls + " mb-4"} />
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <div>
-          <label className="block text-sm text-slate-600 mb-1.5">Valor (R$)</label>
-          <input value={value} onChange={(e)=>setValue(e.target.value.replace(/[^0-9.,]/g,"").replace(",","."))} inputMode="decimal" className={inputCls} />
-        </div>
-        <div>
-          <label className="block text-sm text-slate-600 mb-1.5">Tempo (min)</label>
-          <input value={time} onChange={(e)=>setTime(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" className={inputCls} />
-        </div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Valor (R$)</label>
+          <input value={value} onChange={(e)=>setValue(e.target.value.replace(/[^0-9.,]/g,"").replace(",","."))} inputMode="decimal" className={inputCls} /></div>
+        <div><label className="block text-sm text-slate-600 mb-1.5">Tempo (min)</label>
+          <input value={time} onChange={(e)=>setTime(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" className={inputCls} /></div>
       </div>
       <label className="block text-sm text-slate-600 mb-1.5">Tipo de veículo</label>
       <select value={vt} onChange={(e)=>setVt(e.target.value)} className={inputCls + " mb-4 bg-white"}>
-        <option value="">— nenhum —</option>
-        {vtypes.map((v)=><option key={v.id} value={v.id}>{v.name}</option>)}
-      </select>
+        <option value="">— nenhum —</option>{vtypes.map((v)=><option key={v.id} value={v.id}>{v.name}</option>)}</select>
       <label className="block text-sm text-slate-600 mb-1.5">Código (opcional)</label>
       <input value={cod} onChange={(e)=>setCod(e.target.value)} className={inputCls + " mb-6"} />
       <div className="flex justify-end gap-2">
@@ -251,33 +449,24 @@ function ServicoForm({ token, vtypes, service, onClose, onSaved }) {
   );
 }
 
-// ---------- Tipos de veículo ----------
+// ---------- Tipos ----------
 function Tipos({ token, user }) {
   const isAdmin = user.role === "admin";
   const [list, setList] = useState(null); const [error, setError] = useState("");
   const [editing, setEditing] = useState(null); const [name, setName] = useState(""); const [saving, setSaving] = useState(false);
-
   async function load() { setError(""); try { setList(await api("/vehicle-types", { token })); } catch (e) { setError(firstError(e,"Erro ao carregar.")); setList([]); } }
   useEffect(()=>{ load(); }, []);
-
   function openNew() { setEditing("new"); setName(""); }
   function openEdit(v) { setEditing(v); setName(v.name); }
-
   async function save() {
     setSaving(true); setError("");
-    try {
-      if (editing === "new") await api("/vehicle-types", { method:"POST", token, body:{ name } });
-      else await api("/vehicle-types/" + editing.id, { method:"PUT", token, body:{ name } });
-      setEditing(null); load();
-    } catch (e) { setError(firstError(e, "Não foi possível salvar.")); }
-    finally { setSaving(false); }
+    try { if (editing === "new") await api("/vehicle-types", { method:"POST", token, body:{ name } }); else await api("/vehicle-types/" + editing.id, { method:"PUT", token, body:{ name } }); setEditing(null); load(); }
+    catch (e) { setError(firstError(e, "Não foi possível salvar.")); } finally { setSaving(false); }
   }
   async function remove(v) {
     if (!window.confirm("Excluir o tipo \"" + v.name + "\"?")) return;
-    try { await api("/vehicle-types/" + v.id, { method:"DELETE", token }); load(); }
-    catch (e) { alert(firstError(e, "Não foi possível excluir.")); }
+    try { await api("/vehicle-types/" + v.id, { method:"DELETE", token }); load(); } catch (e) { alert(firstError(e, "Não foi possível excluir.")); }
   }
-
   if (list === null) return <div className="text-slate-400 text-sm">Carregando…</div>;
   return (
     <div>
@@ -291,12 +480,9 @@ function Tipos({ token, user }) {
         {list.map((v)=>(
           <div key={v.id} className="flex items-center gap-3 px-4 py-3">
             <div className="flex-1 text-sm text-slate-800">{v.name}</div>
-            {isAdmin && (
-              <div className="flex items-center gap-2">
-                <button onClick={()=>openEdit(v)} className="text-sm text-blue-600 hover:underline">Editar</button>
-                <button onClick={()=>remove(v)} className="text-sm text-red-600 hover:underline">Excluir</button>
-              </div>
-            )}
+            {isAdmin && (<div className="flex items-center gap-2">
+              <button onClick={()=>openEdit(v)} className="text-sm text-blue-600 hover:underline">Editar</button>
+              <button onClick={()=>remove(v)} className="text-sm text-red-600 hover:underline">Excluir</button></div>)}
           </div>
         ))}
       </div>
@@ -320,27 +506,23 @@ function App() {
   const [token, setToken] = useState(() => localStorage.getItem(tokenKey));
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(!!localStorage.getItem(tokenKey));
-  const [page, setPage] = useState("inicio");
-
+  const [page, setPage] = useState("agendamentos");
   useEffect(() => {
     if (token) api("/me", { token }).then((u)=>{ setUser(u); setBooting(false); })
       .catch(()=>{ localStorage.removeItem(tokenKey); setToken(null); setBooting(false); });
   }, []);
-
   if (!slug) return <NoSlug />;
   if (booting) return <Splash />;
   if (!token || !user) return <Login slug={slug} onLogged={(t,u)=>{ setToken(t); setUser(u); }} />;
-
   return (
     <Layout user={user} slug={slug} page={page} setPage={setPage}
       onLogout={()=>{ api("/logout",{method:"POST",token}).catch(()=>{}); localStorage.removeItem(tokenKey); setToken(null); setUser(null); }}>
-      {page==="inicio" && <Inicio user={user} />}
+      {page==="agendamentos" && <Agendamentos token={token} user={user} />}
       {page==="servicos" && <Servicos token={token} user={user} />}
       {page==="tipos" && <Tipos token={token} user={user} />}
     </Layout>
   );
 }
-
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 </script>
 </body>

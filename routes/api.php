@@ -28,6 +28,7 @@ Route::middleware(['auth:sanctum', 'identify.tenant'])->group(function () {
     Route::delete('/appointments/{appointment}', [AppointmentController::class, 'destroy']);
     Route::post('/appointments/{appointment}/start', [AppointmentController::class, 'start']);
     Route::post('/appointments/{appointment}/complete', [AppointmentController::class, 'complete']);
+    Route::post('/appointments/{appointment}/cancel', [AppointmentController::class, 'cancel']);
 
     // Despesas
     Route::get('/expenses', [ExpenseController::class, 'index']);
