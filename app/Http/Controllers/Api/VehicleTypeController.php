@@ -28,6 +28,13 @@ class VehicleTypeController extends Controller
 
     public function destroy(VehicleType $vehicleType)
     {
+        // Impede excluir um tipo em uso: evita deixar servicos "orfaos" silenciosamente.
+        if ($vehicleType->services()->exists()) {
+            return response()->json([
+                'message' => 'Não é possível excluir: há serviços vinculados a este tipo de veículo. Altere ou remova esses serviços antes.',
+            ], 422);
+        }
+
         $vehicleType->delete();
         return response()->noContent();
     }
