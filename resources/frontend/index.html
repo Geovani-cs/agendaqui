@@ -138,44 +138,49 @@ function Login({ slug, onLogged }) {
 }
 
 // ---------- Layout ----------
+function NavIcon({ name }) {
+  const paths = {
+    agendamentos: "M8 2v3M16 2v3M4 6h16a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3 10h18",
+    servicos: "M12 3s6 6.5 6 10.5a6 6 0 0 1-12 0C6 9.5 12 3 12 3z",
+    tipos: "M5 11l1.5-4A2 2 0 0 1 8.4 6h7.2a2 2 0 0 1 1.9 1.4L19 11M4 11h16v5H4zM7 16v2M17 16v2",
+    colaboradores: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9",
+    financeiro: "M3 7h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h13M17 13h.01",
+  };
+  return (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={paths[name] || ""} /></svg>);
+}
+
 function Layout({ user, slug, page, setPage, onLogout, children }) {
   const nav = [
-    { id:"agendamentos", label:"Agendamentos" },
-    ...(user.role==="admin" ? [{ id:"colaboradores", label:"Colaboradores" }, { id:"financeiro", label:"Financeiro" }] : []),
+    { id:"agendamentos", label:"Agenda" },
     { id:"servicos", label:"Serviços" },
-    { id:"tipos", label:"Tipos de automóveis" },
+    { id:"tipos", label:"Veículos" },
+    ...(user.role==="admin" ? [{ id:"colaboradores", label:"Equipe" }, { id:"financeiro", label:"Caixa" }] : []),
   ];
   return (
-    <div className="min-h-screen">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-4">
-          <div className="flex items-center justify-between h-14">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold">A</div>
-              <span className="font-semibold text-slate-800">AgendAqui</span>
-              <span className="text-xs text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">{slug}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-500 hidden sm:inline">{user.name}</span>
-              <button onClick={onLogout} className="text-sm text-slate-500 hover:text-slate-800">Sair</button>
-            </div>
+    <div className="min-h-screen pb-20">
+      <header className="bg-blue-600 text-white sticky top-0 z-40 shadow-sm">
+        <div className="max-w-md mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center font-bold">A</div>
+            <span className="font-semibold">AgendAqui</span>
+            <span className="text-xs text-white/70 border border-white/30 rounded px-1.5 py-0.5">{slug}</span>
           </div>
-          <nav className="flex gap-1 -mb-px overflow-x-auto">
-            {nav.map((n)=>(
-              <button key={n.id} onClick={()=>setPage(n.id)}
-                className={"px-3 py-2 text-sm whitespace-nowrap border-b-2 " + (page===n.id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-800")}>
-                {n.label}
-              </button>
-            ))}
-          </nav>
+          <button onClick={onLogout} className="text-sm text-white/80 hover:text-white">Sair</button>
         </div>
       </header>
-      <main className="max-w-4xl mx-auto px-4 py-6">{children}</main>
+      <main className="max-w-md mx-auto px-4 py-5">{children}</main>
+      <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-40">
+        <div className="max-w-md mx-auto flex">
+          {nav.map(n=>(
+            <button key={n.id} onClick={()=>setPage(n.id)} className={"flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium " + (page===n.id ? "text-blue-600" : "text-slate-400")}>
+              <NavIcon name={n.id} /><span>{n.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
     </div>
   );
 }
-
-// ---------- WhatsApp ----------
 function WhatsApp({ wa, onClose }) {
   return (
     <Modal title="Mensagem para o cliente" onClose={onClose}>
