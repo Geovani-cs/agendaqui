@@ -655,7 +655,7 @@ function ColaboradorForm({ token, services, collab, onClose, onSaved }) {
   );
 }
 
-function Financeiro({ token, user }) {
+function CaixaDia({ token, user }) {
   const [date, setDate] = useState(todayStr());
   const [sum, setSum] = useState(null);
   const [expenses, setExpenses] = useState([]);
@@ -699,7 +699,7 @@ function Financeiro({ token, user }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <h2 className="text-lg font-semibold text-slate-800">Financeiro</h2>
+        <h2 className="text-lg font-semibold text-slate-800">Caixa do dia</h2>
         <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className={inputCls+" w-auto"} />
       </div>
       {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
@@ -762,6 +762,81 @@ function Financeiro({ token, user }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function Comissoes({ token, user }) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState("");
+  const [paying, setPaying] = useState(null);
+  async function load(){ setError(""); try{ setRows(await api("/payments/ledger",{token})); }catch(e){ setError(firstError(e,"Erro ao carregar.")); setRows([]); } }
+  useEffect(()=>{ load(); }, []);
+  if(rows===null) return <div className="text-slate-400 text-sm">Carregando...</div>;
+  return (
+    <div>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
+        {rows.length===0 && <div className="px-4 py-10 text-center text-sm text-slate-400">Nenhum colaborador.</div>}
+        {rows.map(r=>(
+          <div key={r.collaborator_id} className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-800">{r.name}</div>
+              <div className="text-xs text-slate-400">Ganho {brl(r.earned)} {String.fromCharCode(183)} Pago {brl(r.paid)}</div>
+            </div>
+            <div className="text-right">
+              <div className={"text-sm font-semibold " + (r.balance>0 ? "text-amber-600" : "text-emerald-600")}>{brl(r.balance)}</div>
+              <div className="text-[10px] text-slate-400">a receber</div>
+            </div>
+            {r.balance>0 && <button onClick={()=>setPaying(r)} className="text-sm text-blue-600 hover:underline">Pagar</button>}
+          </div>
+        ))}
+      </div>
+      {paying && <PagamentoModal token={token} row={paying} onClose={()=>setPaying(null)} onDone={()=>{ setPaying(null); load(); }} />}
+    </div>
+  );
+}
+
+function PagamentoModal({ token, row, onClose, onDone }) {
+  const [amount, setAmount] = useState(row.balance>0 ? Number(row.balance) : "");
+  const [date, setDate] = useState(todayStr());
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  async function pay(){
+    if(amount==="" || Number(amount)<=0){ setError("Informe um valor."); return; }
+    setSaving(true); setError("");
+    try{ await api("/payments",{method:"POST",token,body:{collaborator_id:row.collaborator_id, amount:Number(amount), paid_on:date}}); onDone(); }
+    catch(e){ setError(firstError(e,"Erro ao registrar.")); setSaving(false); }
+  }
+  return (
+    <Modal title={"Pagar " + row.name} onClose={onClose}>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      <p className="text-sm text-slate-500 mb-1">A receber: <span className="font-medium text-slate-700">{brl(row.balance)}</span></p>
+      {row.pix && <p className="text-xs text-slate-400 mb-4">PIX: {row.pix}</p>}
+      <label className="block text-sm text-slate-600 mb-1.5">Valor</label>
+      <div className="mb-4"><CurrencyInput value={amount} onChange={setAmount} className={inputCls} /></div>
+      <label className="block text-sm text-slate-600 mb-1.5">Data do pagamento</label>
+      <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className={inputCls+" mb-6"} />
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className={btnGhost}>Cancelar</button>
+        <button onClick={pay} disabled={saving} className={btnPrimary}>{saving ? "Salvando..." : "Confirmar pagamento"}</button>
+      </div>
+    </Modal>
+  );
+}
+
+function Financeiro({ token, user }) {
+  const [tab, setTab] = useState("caixa");
+  const tabs = [ {id:"caixa",label:"Caixa do dia"}, {id:"comissoes",label:"Comissões"}, {id:"relatorios",label:"Relatórios"} ];
+  return (
+    <div>
+      <div className="flex gap-1 mb-4 border-b border-slate-200 overflow-x-auto">
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} className={"px-3 py-2 text-sm whitespace-nowrap border-b-2 " + (tab===t.id ? "border-blue-600 text-blue-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-800")}>{t.label}</button>
+        ))}
+      </div>
+      {tab==="caixa" && <CaixaDia token={token} user={user} />}
+      {tab==="comissoes" && <Comissoes token={token} user={user} />}
+      {tab==="relatorios" && <div className="text-slate-400 text-sm">Relatórios em breve.</div>}
     </div>
   );
 }
