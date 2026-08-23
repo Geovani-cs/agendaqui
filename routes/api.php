@@ -68,3 +68,11 @@ Route::middleware(['auth:sanctum', 'identify.tenant'])->group(function () {
         Route::put('/settings', [SettingController::class, 'update']);
     });
 });
+
+
+// ===== Painel do dono (landlord) — sem identify.tenant: enxerga todos =====
+Route::middleware(['auth:sanctum', 'super-admin'])->prefix('landlord')->group(function () {
+    Route::get('/tenants', [\App\Http\Controllers\Api\LandlordController::class, 'tenants']);
+    Route::post('/tenants', [\App\Http\Controllers\Api\LandlordController::class, 'store']);
+    Route::patch('/tenants/{tenant}/status', [\App\Http\Controllers\Api\LandlordController::class, 'updateStatus']);
+});
