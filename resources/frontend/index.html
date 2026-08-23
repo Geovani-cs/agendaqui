@@ -290,7 +290,6 @@ function Agendamentos({ token, user, newSignal }) {
           <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className={inputCls + " w-auto"} />
         </div>
       </div>
-      </div>
       {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
       {list === null ? <div className="text-slate-400 text-sm">Carregando…</div> : (
         <div className="space-y-3">
