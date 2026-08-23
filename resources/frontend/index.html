@@ -141,7 +141,7 @@ function Login({ slug, onLogged }) {
 function Layout({ user, slug, page, setPage, onLogout, children }) {
   const nav = [
     { id:"agendamentos", label:"Agendamentos" },
-    ...(user.role==="admin" ? [{ id:"colaboradores", label:"Colaboradores" }] : []),
+    ...(user.role==="admin" ? [{ id:"colaboradores", label:"Colaboradores" }, { id:"financeiro", label:"Financeiro" }] : []),
     { id:"servicos", label:"Serviços" },
     { id:"tipos", label:"Tipos de automóveis" },
   ];
@@ -655,6 +655,117 @@ function ColaboradorForm({ token, services, collab, onClose, onSaved }) {
   );
 }
 
+function Financeiro({ token, user }) {
+  const [date, setDate] = useState(todayStr());
+  const [sum, setSum] = useState(null);
+  const [expenses, setExpenses] = useState([]);
+  const [error, setError] = useState("");
+  const [addExp, setAddExp] = useState(false);
+  const [eDesc, setEDesc] = useState(""); const [eVal, setEVal] = useState(""); const [eSaving, setESaving] = useState(false);
+
+  async function load() {
+    setError("");
+    try {
+      const [s, ex] = await Promise.all([ api("/cash/"+date, {token}), api("/expenses?from="+date+"&to="+date, {token}) ]);
+      setSum(s); setExpenses(ex);
+    } catch (e) { setError(firstError(e,"Erro ao carregar.")); setSum(null); }
+  }
+  useEffect(()=>{ setSum(null); load(); }, [date]);
+
+  async function togglePaid(cid) {
+    try { const r = await api("/cash/"+date+"/toggle-paid", {method:"POST",token,body:{collaborator_id:cid}}); setSum(r.summary); }
+    catch (e) { alert(firstError(e,"Erro.")); }
+  }
+  async function closeDay() {
+    if(!window.confirm("Fechar o caixa deste dia? Isso registra os totais.")) return;
+    try { const r = await api("/cash/"+date+"/close", {method:"POST",token}); setSum(r.summary); }
+    catch(e){ alert(firstError(e,"Erro ao fechar.")); }
+  }
+  async function saveExpense() {
+    if(!eDesc || eVal==="") return;
+    setESaving(true);
+    try { await api("/expenses",{method:"POST",token,body:{description:eDesc, value:Number(eVal), spent_on:date}}); setEDesc(""); setEVal(""); setAddExp(false); load(); }
+    catch(e){ alert(firstError(e,"Erro ao salvar despesa.")); } finally { setESaving(false); }
+  }
+  async function removeExpense(id){ if(!window.confirm("Excluir despesa?")) return; try{ await api("/expenses/"+id,{method:"DELETE",token}); load(); }catch(e){ alert(firstError(e,"Erro.")); } }
+
+  const card = (label, value, tone) => (
+    <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className={"text-lg font-semibold " + (tone||"text-slate-800")}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <h2 className="text-lg font-semibold text-slate-800">Financeiro</h2>
+        <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className={inputCls+" w-auto"} />
+      </div>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      {sum===null ? <div className="text-slate-400 text-sm">Carregando...</div> : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {card("Faturamento", brl(sum.gross))}
+            {card("Despesas", brl(sum.expenses_total))}
+            {card("Comissões", brl(sum.collaborators_total))}
+            {card("Líquido", brl(sum.net), sum.net>=0 ? "text-emerald-600" : "text-red-600")}
+          </div>
+          <div className="text-xs text-slate-400">{sum.services_count} serviço(s) concluído(s) neste dia{sum.closed ? " " + String.fromCharCode(183) + " caixa fechado" : ""}</div>
+
+          <div className="bg-white rounded-2xl border border-slate-200">
+            <div className="px-4 py-3 border-b border-slate-100 text-sm font-semibold text-slate-700">Comissões do dia</div>
+            <div className="divide-y divide-slate-100">
+              {sum.collaborators.length===0 && <div className="px-4 py-6 text-center text-sm text-slate-400">Nenhuma comissão neste dia.</div>}
+              {sum.collaborators.map((c,ix)=>(
+                <div key={ix} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1"><div className="text-sm text-slate-800">{c.name}</div><div className="text-xs text-slate-400">{c.count} serviço(s)</div></div>
+                  <div className="text-sm text-slate-700">{brl(c.earning)}</div>
+                  {c.collaborator_id ? (
+                    <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                      <input type="checkbox" checked={c.paid} onChange={()=>togglePaid(c.collaborator_id)} /> pago
+                    </label>
+                  ) : <span className="w-12"></span>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">Despesas do dia</span>
+              <button onClick={()=>setAddExp(!addExp)} className="text-sm text-blue-600 hover:underline">+ Adicionar</button>
+            </div>
+            {addExp && (
+              <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-end gap-2">
+                <div className="flex-1 min-w-[140px]"><label className="block text-xs text-slate-500 mb-1">Descrição</label>
+                  <input value={eDesc} onChange={(e)=>setEDesc(e.target.value)} className={inputCls} /></div>
+                <div className="w-28"><label className="block text-xs text-slate-500 mb-1">Valor</label>
+                  <CurrencyInput value={eVal} onChange={setEVal} className={inputCls} /></div>
+                <button onClick={saveExpense} disabled={eSaving||!eDesc||eVal===""} className={btnPrimary}>Salvar</button>
+              </div>
+            )}
+            <div className="divide-y divide-slate-100">
+              {expenses.length===0 && <div className="px-4 py-6 text-center text-sm text-slate-400">Nenhuma despesa neste dia.</div>}
+              {expenses.map(x=>(
+                <div key={x.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 text-sm text-slate-700">{x.description}</div>
+                  <div className="text-sm text-red-600">- {brl(x.value)}</div>
+                  <button onClick={()=>removeExpense(x.id)} className="text-xs text-red-600 hover:underline">Excluir</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button onClick={closeDay} className={btnPrimary}>{sum.closed ? "Refechar caixa do dia" : "Fechar caixa do dia"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(tokenKey));
   const [user, setUser] = useState(null);
@@ -672,6 +783,7 @@ function App() {
       onLogout={()=>{ api("/logout",{method:"POST",token}).catch(()=>{}); localStorage.removeItem(tokenKey); setToken(null); setUser(null); }}>
       {page==="agendamentos" && <Agendamentos token={token} user={user} />}
       {page==="colaboradores" && <Colaboradores token={token} user={user} />}
+      {page==="financeiro" && <Financeiro token={token} user={user} />}
       {page==="servicos" && <Servicos token={token} user={user} />}
       {page==="tipos" && <Tipos token={token} user={user} />}
     </Layout>
