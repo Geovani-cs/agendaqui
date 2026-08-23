@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AgendAqui — Painel do dono</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style> body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; } </style>
+</head>
+<body class="bg-slate-100">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+const API = "/api";
+const tokenKey = "agendaqui_landlord_token";
+const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+async function api(path, opts = {}) {
+  const { method = "GET", body, token } = opts;
+  const headers = { Accept: "application/json" };
+  if (body) headers["Content-Type"] = "application/json";
+  if (token) headers["Authorization"] = "Bearer " + token;
+  const res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let data = null; try { data = await res.json(); } catch (e) {}
+  if (!res.ok) { const err = new Error((data && data.message) || ("Erro " + res.status)); err.status = res.status; err.data = data; throw err; }
+  return data;
+}
+function firstError(e, fb){ if(e&&e.data&&e.data.errors){const k=Object.keys(e.data.errors)[0]; if(k) return e.data.errors[k][0];} return (e&&e.message)||fb; }
+
+const inputCls = "w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500";
+const btnPrimary = "bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors";
+const btnGhost = "text-sm border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg";
+
+const STATUS = {
+  active:    { label: "Ativo",       cls: "bg-emerald-50 text-emerald-700" },
+  warning:   { label: "Aviso",       cls: "bg-amber-50 text-amber-700" },
+  read_only: { label: "Só leitura",  cls: "bg-slate-100 text-slate-600" },
+  blocked:   { label: "Bloqueado",   cls: "bg-red-50 text-red-700" },
+};
+
+function Login({ onLogged }) {
+  const [username, setU] = useState(""); const [password, setP] = useState("");
+  const [loading, setL] = useState(false); const [error, setE] = useState("");
+  async function submit() {
+    if (!username || !password) { setE("Preencha usuário e senha."); return; }
+    setE(""); setL(true);
+    try { const r = await api("/login", { method:"POST", body:{ username, password } }); // sem tenant = dono
+      localStorage.setItem(tokenKey, r.token); onLogged(r.token, r.user);
+    } catch (e) { setE(e.status===422||e.status===401 ? "Usuário ou senha inválidos." : firstError(e,"Não foi possível entrar.")); }
+    finally { setL(false); }
+  }
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 w-full max-w-sm">
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center mx-auto mb-3 text-xl font-bold">A</div>
+          <h1 className="text-lg font-semibold text-slate-800">AgendAqui</h1>
+          <p className="text-sm text-slate-500 mt-1">Painel do dono</p>
+        </div>
+        {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+        <label className="block text-sm text-slate-600 mb-1.5">Usuário</label>
+        <input value={username} onChange={(e)=>setU(e.target.value)} autoFocus className={inputCls + " mb-4"} />
+        <label className="block text-sm text-slate-600 mb-1.5">Senha</label>
+        <input type="password" value={password} onChange={(e)=>setP(e.target.value)} onKeyDown={(e)=>{ if(e.key==="Enter") submit(); }} className={inputCls + " mb-5"} />
+        <button onClick={submit} disabled={loading} className={btnPrimary + " w-full"}>{loading ? "Entrando…" : "Entrar"}</button>
+      </div>
+    </div>
+  );
+}
+
+function NovoModal({ token, onClose, onSaved }) {
+  const [name, setName] = useState(""); const [slug, setSlug] = useState(""); const [fee, setFee] = useState("");
+  const [an, setAn] = useState(""); const [au, setAu] = useState(""); const [ap, setAp] = useState("");
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  async function save() {
+    setError(""); setSaving(true);
+    const body = { name, slug, monthly_fee: fee===""?149:Number(fee), admin_name: an, admin_username: au, admin_password: ap };
+    try { await api("/landlord/tenants", { method:"POST", token, body }); onSaved(); }
+    catch (e) { setError(firstError(e,"Não foi possível criar.")); setSaving(false); }
+  }
+  return (
+    <div className="fixed inset-0 bg-black/45 flex items-center justify-center p-4 z-50" onClick={(e)=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-lg font-semibold text-slate-800">Novo ambiente</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+        <p className="text-sm text-slate-500 mb-4">Cria o ambiente e o usuário administrador inicial do cliente.</p>
+        {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+        <label className="block text-sm text-slate-600 mb-1.5">Nome do cliente</label>
+        <input value={name} onChange={(e)=>setName(e.target.value)} className={inputCls + " mb-3"} />
+        <label className="block text-sm text-slate-600 mb-1.5">Endereço do ambiente</label>
+        <div className="flex items-stretch border border-slate-300 rounded-lg overflow-hidden mb-3">
+          <span className="flex items-center px-2.5 text-sm text-slate-400 bg-slate-50 border-r border-slate-200">agendaqui.com.br/</span>
+          <input value={slug} onChange={(e)=>setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g,""))} placeholder="jv" className="flex-1 px-2 py-2.5 text-sm focus:outline-none min-w-0" />
+        </div>
+        <label className="block text-sm text-slate-600 mb-1.5">Mensalidade (R$)</label>
+        <input value={fee} onChange={(e)=>setFee(e.target.value.replace(/[^0-9.,]/g,"").replace(",","."))} placeholder="149" className={inputCls + " mb-4"} />
+        <div className="border-t border-slate-100 pt-4 mb-1 text-sm font-medium text-slate-700">Administrador do cliente</div>
+        <div className="grid grid-cols-2 gap-3 mb-1">
+          <div><label className="block text-sm text-slate-600 mb-1.5">Nome</label><input value={an} onChange={(e)=>setAn(e.target.value)} className={inputCls} /></div>
+          <div><label className="block text-sm text-slate-600 mb-1.5">Usuário</label><input value={au} onChange={(e)=>setAu(e.target.value.toLowerCase().replace(/\s/g,""))} className={inputCls} /></div>
+        </div>
+        <label className="block text-sm text-slate-600 mb-1.5 mt-3">Senha inicial</label>
+        <input value={ap} onChange={(e)=>setAp(e.target.value)} className={inputCls + " mb-6"} />
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className={btnGhost}>Cancelar</button>
+          <button onClick={save} disabled={saving || !name || !slug || !an || !au || !ap} className={btnPrimary}>{saving ? "Criando…" : "Criar ambiente"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({ token, user, onLogout }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [novo, setNovo] = useState(false);
+  async function load(){ setError(""); try{ setData(await api("/landlord/tenants",{token})); }catch(e){ setError(firstError(e,"Erro ao carregar.")); setData({tenants:[],summary:{}}); } }
+  useEffect(()=>{ load(); }, []);
+  async function changeStatus(id, status){ try{ await api("/landlord/tenants/"+id+"/status",{method:"PATCH",token,body:{status}}); load(); }catch(e){ alert(firstError(e,"Erro.")); } }
+
+  const card = (l,v,tone)=>(<div className="bg-white rounded-xl border border-slate-200 px-4 py-3"><div className="text-[13px] text-slate-500">{l}</div><div className={"text-2xl font-medium mt-0.5 "+(tone||"text-slate-800")}>{v}</div></div>);
+
+  return (
+    <div className="min-h-screen">
+      <header className="bg-white border-b border-slate-200">
+        <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">A</div>
+            <span className="font-semibold text-slate-800">AgendAqui</span>
+            <span className="text-xs text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">painel do dono</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-500 hidden sm:inline">{user.name}</span>
+            <button onClick={onLogout} className="text-sm text-slate-500 hover:text-slate-800">Sair</button>
+          </div>
+        </div>
+      </header>
+      <main className="max-w-4xl mx-auto px-4 py-6">
+        <div className="flex items-center justify-between mb-5">
+          <h1 className="text-xl font-semibold text-slate-800">Ambientes</h1>
+          <button onClick={()=>setNovo(true)} className={btnPrimary}>+ Novo ambiente</button>
+        </div>
+        {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+        {data===null ? <div className="text-slate-400 text-sm">Carregando…</div> : (
+          <div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              {card("Clientes ativos", data.summary.active ?? 0)}
+              {card("Sua receita/mês", brl(data.summary.my_revenue), "text-indigo-600")}
+              {card("Faturamento dos clientes", brl(data.summary.clients_revenue))}
+              {card("Bloqueados", data.summary.blocked ?? 0, (data.summary.blocked>0?"text-red-600":""))}
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
+              {data.tenants.length===0 && <div className="px-4 py-10 text-center text-sm text-slate-400">Nenhum ambiente ainda. Crie o primeiro!</div>}
+              {data.tenants.map(t=>{
+                const st = STATUS[t.status] || STATUS.active;
+                return (
+                  <div key={t.id} className="flex items-center gap-3 px-4 py-3.5 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-800">{t.name}</div>
+                      <div className="text-xs text-slate-400">/{t.slug} · fatura {brl(t.revenue_month)}/mês · mens. {brl(t.monthly_fee)}</div>
+                    </div>
+                    <span className={"text-xs px-2 py-0.5 rounded-full "+st.cls}>{st.label}</span>
+                    <select value={t.status} onChange={(e)=>changeStatus(t.id, e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+                      <option value="active">Ativo</option>
+                      <option value="warning">Aviso</option>
+                      <option value="read_only">Só leitura</option>
+                      <option value="blocked">Bloqueado</option>
+                    </select>
+                    <a href={"/"+t.slug} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:underline">Abrir</a>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </main>
+      {novo && <NovoModal token={token} onClose={()=>setNovo(false)} onSaved={()=>{ setNovo(false); load(); }} />}
+    </div>
+  );
+}
+
+function App() {
+  const [token, setToken] = useState(() => localStorage.getItem(tokenKey));
+  const [user, setUser] = useState(null);
+  const [booting, setBooting] = useState(!!localStorage.getItem(tokenKey));
+  useEffect(() => {
+    if (token) api("/me", { token }).then((u)=>{ setUser(u); setBooting(false); })
+      .catch(()=>{ localStorage.removeItem(tokenKey); setToken(null); setBooting(false); });
+  }, []);
+  if (booting) return <div className="min-h-screen flex items-center justify-center text-slate-400 text-sm">Carregando…</div>;
+  if (!token || !user) return <Login onLogged={(t,u)=>{ setToken(t); setUser(u); }} />;
+  return <Dashboard token={token} user={user} onLogout={()=>{ api("/logout",{method:"POST",token}).catch(()=>{}); localStorage.removeItem(tokenKey); setToken(null); setUser(null); }} />;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
