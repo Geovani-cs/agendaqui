@@ -145,19 +145,22 @@ function NavIcon({ name }) {
     tipos: "M5 11l1.5-4A2 2 0 0 1 8.4 6h7.2a2 2 0 0 1 1.9 1.4L19 11M4 11h16v5H4zM7 16v2M17 16v2",
     colaboradores: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9",
     financeiro: "M3 7h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h13M17 13h.01",
+    mais: "M5 12h.01M12 12h.01M19 12h.01",
   };
   return (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={paths[name] || ""} /></svg>);
 }
 
-function Layout({ user, slug, page, setPage, onLogout, children }) {
-  const nav = [
-    { id:"agendamentos", label:"Agenda" },
-    { id:"servicos", label:"Serviços" },
-    { id:"tipos", label:"Veículos" },
-    ...(user.role==="admin" ? [{ id:"colaboradores", label:"Equipe" }, { id:"financeiro", label:"Caixa" }] : []),
-  ];
+function Layout({ user, slug, page, setPage, onNew, onLogout, children }) {
+  const isAdmin = user.role === "admin";
+  const left = [ { id:"agendamentos", label:"Agenda", icon:"agendamentos" }, { id:"servicos", label:"Serviços", icon:"servicos" } ];
+  const right = [ ...(isAdmin ? [{ id:"financeiro", label:"Caixa", icon:"financeiro" }] : []), { id:"mais", label:"Mais", icon:"mais" } ];
+  const Item = (n) => (
+    <button key={n.id} onClick={()=>setPage(n.id)} className={"flex-1 flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium " + (page===n.id ? "text-blue-600" : "text-slate-400")}>
+      <NavIcon name={n.icon} /><span>{n.label}</span>
+    </button>
+  );
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-24">
       <header className="bg-blue-600 text-white sticky top-0 z-40 shadow-sm">
         <div className="max-w-md mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -170,14 +173,38 @@ function Layout({ user, slug, page, setPage, onLogout, children }) {
       </header>
       <main className="max-w-md mx-auto px-4 py-5">{children}</main>
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-40">
-        <div className="max-w-md mx-auto flex">
-          {nav.map(n=>(
-            <button key={n.id} onClick={()=>setPage(n.id)} className={"flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium " + (page===n.id ? "text-blue-600" : "text-slate-400")}>
-              <NavIcon name={n.id} /><span>{n.label}</span>
-            </button>
-          ))}
+        <div className="max-w-md mx-auto flex items-center">
+          {left.map(Item)}
+          <div className="flex-1 flex justify-center">
+            <button onClick={onNew} aria-label="Novo agendamento" className="w-14 h-14 -mt-7 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg ring-4 ring-slate-100 flex items-center justify-center text-3xl leading-none">+</button>
+          </div>
+          {right.map(Item)}
         </div>
       </nav>
+    </div>
+  );
+}
+
+function Mais({ user, setPage }) {
+  const isAdmin = user.role === "admin";
+  const opts = [
+    { id:"tipos", label:"Tipos de automóvel", desc:"Categorias de veículos" },
+    ...(isAdmin ? [
+      { id:"colaboradores", label:"Colaboradores", desc:"Equipe e comissões" },
+      { id:"config", label:"Mensagens automáticas", desc:"Textos enviados no WhatsApp" },
+    ] : []),
+  ];
+  return (
+    <div>
+      <h2 className="text-lg font-semibold text-slate-800 mb-3">Mais</h2>
+      <div className="space-y-2">
+        {opts.map(o=>(
+          <button key={o.id} onClick={()=>setPage(o.id)} className="w-full bg-white rounded-2xl border border-slate-200 px-4 py-3.5 flex items-center justify-between hover:border-blue-300">
+            <div className="text-left"><div className="text-sm font-medium text-slate-800">{o.label}</div><div className="text-xs text-slate-400">{o.desc}</div></div>
+            <span className="text-slate-300 text-lg">{String.fromCharCode(8250)}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -209,7 +236,7 @@ function PhotosModal({ token, appt, onClose }) {
     </Modal>
   );
 }
-function Agendamentos({ token, user }) {
+function Agendamentos({ token, user, newSignal }) {
   const isAdmin = user.role === "admin";
   const [date, setDate] = useState(todayStr());
   const [list, setList] = useState(null);
@@ -237,6 +264,7 @@ function Agendamentos({ token, user }) {
     } catch (e) { setError(firstError(e,"Erro ao carregar.")); setList([]); }
   }
   useEffect(()=>{ loadBase(); }, []);
+  useEffect(()=>{ if(newSignal){ setEditing("new"); } }, [newSignal]);
   useEffect(()=>{ setList(null); load(); }, [date]);
 
   async function start(a){ try{ await api("/appointments/"+a.id+"/start",{method:"POST",token}); load(); }catch(e){ alert(firstError(e,"Erro.")); } }
@@ -908,6 +936,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(!!localStorage.getItem(tokenKey));
   const [page, setPage] = useState("agendamentos");
+  const [newSig, setNewSig] = useState(0);
   useEffect(() => {
     if (token) api("/me", { token }).then((u)=>{ setUser(u); setBooting(false); })
       .catch(()=>{ localStorage.removeItem(tokenKey); setToken(null); setBooting(false); });
@@ -916,13 +945,15 @@ function App() {
   if (booting) return <Splash />;
   if (!token || !user) return <Login slug={slug} onLogged={(t,u)=>{ setToken(t); setUser(u); }} />;
   return (
-    <Layout user={user} slug={slug} page={page} setPage={setPage}
+    <Layout user={user} slug={slug} page={page} setPage={setPage} onNew={()=>{ setPage("agendamentos"); setNewSig(n=>n+1); }}
       onLogout={()=>{ api("/logout",{method:"POST",token}).catch(()=>{}); localStorage.removeItem(tokenKey); setToken(null); setUser(null); }}>
-      {page==="agendamentos" && <Agendamentos token={token} user={user} />}
+      {page==="agendamentos" && <Agendamentos token={token} user={user} newSignal={newSig} />}
       {page==="colaboradores" && <Colaboradores token={token} user={user} />}
       {page==="financeiro" && <Financeiro token={token} user={user} />}
       {page==="servicos" && <Servicos token={token} user={user} />}
       {page==="tipos" && <Tipos token={token} user={user} />}
+      {page==="mais" && <Mais user={user} setPage={setPage} />}
+      {page==="config" && <div className="text-slate-400 text-sm">Mensagens automaticas: em breve (Fase 3).</div>}
     </Layout>
   );
 }
