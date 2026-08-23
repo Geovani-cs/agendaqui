@@ -54,6 +54,32 @@ class AppointmentController extends Controller
         return $appointment->load(['services', 'collaborator', 'vehicleType', 'photos']);
     }
 
+    // Busca clientes anteriores (dos agendamentos) por nome, para autopreenchimento.
+    public function clients(Request $request)
+    {
+        $q = trim((string) $request->query('q', ''));
+        if (mb_strlen($q) < 2) {
+            return [];
+        }
+
+        return Appointment::with('vehicleType:id,name')
+            ->where('owner_name', 'like', '%' . $q . '%')
+            ->orderByDesc('scheduled_at')
+            ->limit(60)
+            ->get(['id', 'owner_name', 'phone', 'plate', 'model', 'vehicle_type_id'])
+            ->unique(fn ($a) => mb_strtolower($a->owner_name) . '|' . $a->phone . '|' . $a->plate)
+            ->take(8)
+            ->map(fn ($a) => [
+                'owner_name' => $a->owner_name,
+                'phone' => $a->phone,
+                'plate' => $a->plate,
+                'model' => $a->model,
+                'vehicle_type_id' => $a->vehicle_type_id,
+                'vehicle_type' => $a->vehicleType?->name,
+            ])
+            ->values();
+    }
+
     public function store(Request $request)
     {
         $data = $this->validated($request);

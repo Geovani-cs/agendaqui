@@ -23,6 +23,7 @@ Route::middleware(['auth:sanctum', 'identify.tenant'])->group(function () {
 
     // Agendamentos (o index com filtros também é a "Consultar serviços"/histórico)
     Route::get('/appointments', [AppointmentController::class, 'index']);
+    Route::get('/clients', [AppointmentController::class, 'clients']);
     Route::get('/appointments/{appointment}', [AppointmentController::class, 'show']);
     Route::post('/appointments', [AppointmentController::class, 'store']);
     Route::put('/appointments/{appointment}', [AppointmentController::class, 'update']);
