@@ -155,7 +155,7 @@ function NavIcon({ name }) {
 function Layout({ user, slug, page, setPage, onNew, onLogout, children }) {
   const isAdmin = user.role === "admin";
   const left = [ { id:"inicio", label:"Início", icon:"inicio" }, { id:"agendamentos", label:"Agenda", icon:"agendamentos" } ];
-  const right = [ ...(isAdmin ? [{ id:"financeiro", label:"Caixa", icon:"financeiro" }] : []), { id:"mais", label:"Mais", icon:"mais" } ];
+  const right = isAdmin ? [ { id:"financeiro", label:"Caixa", icon:"financeiro" }, { id:"mais", label:"Mais", icon:"mais" } ] : [];
   const Item = (n) => (
     <button key={n.id} onClick={()=>setPage(n.id)} className={"flex-1 flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium " + (page===n.id ? "text-blue-600" : "text-slate-400")}>
       <NavIcon name={n.icon} /><span>{n.label}</span>
@@ -189,14 +189,13 @@ function Layout({ user, slug, page, setPage, onNew, onLogout, children }) {
 
 function Mais({ user, setPage }) {
   const isAdmin = user.role === "admin";
-  const opts = [
+  const opts = isAdmin ? [
     { id:"servicos", label:"Serviços", desc:"Catálogo e preços" },
     { id:"tipos", label:"Tipos de automóvel", desc:"Categorias de veículos" },
-    ...(isAdmin ? [
-      { id:"colaboradores", label:"Colaboradores", desc:"Equipe e comissões" },
-      { id:"config", label:"Mensagens automáticas", desc:"Textos enviados no WhatsApp" },
-    ] : []),
-  ];
+    { id:"colaboradores", label:"Colaboradores", desc:"Equipe e comissões" },
+    { id:"usuarios", label:"Usuários", desc:"Administradores e colaboradores" },
+    { id:"config", label:"Mensagens automáticas", desc:"Textos enviados no WhatsApp" },
+  ] : [];
   return (
     <div>
       <h2 className="text-lg font-semibold text-slate-800 mb-3">Mais</h2>
@@ -996,6 +995,74 @@ function Inicio({ token, user, setPage, onNew }) {
   );
 }
 
+function Usuarios({ token, user }) {
+  const [list, setList] = useState(null); const [error, setError] = useState(""); const [editing, setEditing] = useState(null);
+  async function load(){ setError(""); try{ setList(await api("/users",{token})); }catch(e){ setError(firstError(e,"Erro ao carregar.")); setList([]); } }
+  useEffect(()=>{ load(); }, []);
+  async function remove(u){ if(!window.confirm('Excluir o usuário "'+u.name+'"?')) return; try{ await api("/users/"+u.id,{method:"DELETE",token}); load(); }catch(e){ alert(firstError(e,"Erro ao excluir.")); } }
+  if(list===null) return <div className="text-slate-400 text-sm">Carregando...</div>;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-slate-800">Usuários</h2>
+        <button onClick={()=>setEditing("new")} className={btnPrimary}>+ Novo</button>
+      </div>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
+        {list.length===0 && <div className="px-4 py-10 text-center text-sm text-slate-400">Nenhum usuário.</div>}
+        {list.map(u=>(
+          <div key={u.id} className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-800">{u.name}{u.id===user.id ? " (você)" : ""}</div>
+              <div className="text-xs text-slate-400">@{u.username}</div>
+            </div>
+            <span className={"text-xs px-2 py-0.5 rounded-full " + (u.role==="admin" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-600")}>{u.role==="admin" ? "Administrador" : "Colaborador"}</span>
+            <button onClick={()=>setEditing(u)} className="text-sm text-blue-600 hover:underline">Editar</button>
+            {u.id!==user.id && <button onClick={()=>remove(u)} className="text-sm text-red-600 hover:underline">Excluir</button>}
+          </div>
+        ))}
+      </div>
+      {editing && <UsuarioForm token={token} usuario={editing==="new"?null:editing} onClose={()=>setEditing(null)} onSaved={()=>{ setEditing(null); load(); }} />}
+    </div>
+  );
+}
+
+function UsuarioForm({ token, usuario, onClose, onSaved }) {
+  const [name, setName] = useState(usuario?usuario.name:"");
+  const [username, setUsername] = useState(usuario?usuario.username:"");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState(usuario?usuario.role:"colaborador");
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  async function save(){
+    if(!usuario && !password){ setError("Defina uma senha."); return; }
+    setError(""); setSaving(true);
+    const body = { name, username, role }; if(password) body.password = password;
+    try{ if(usuario) await api("/users/"+usuario.id,{method:"PUT",token,body}); else await api("/users",{method:"POST",token,body}); onSaved(); }
+    catch(e){ setError(firstError(e,"Erro ao salvar.")); setSaving(false); }
+  }
+  return (
+    <Modal title={usuario?"Editar usuário":"Novo usuário"} onClose={onClose}>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      <label className="block text-sm text-slate-600 mb-1.5">Nome</label>
+      <input value={name} onChange={(e)=>setName(e.target.value)} autoFocus className={inputCls+" mb-4"} />
+      <label className="block text-sm text-slate-600 mb-1.5">Usuário (login)</label>
+      <input value={username} onChange={(e)=>setUsername(e.target.value.toLowerCase().replace(/\s/g,""))} className={inputCls+" mb-4"} />
+      <label className="block text-sm text-slate-600 mb-1.5">{usuario ? "Nova senha (vazio p/ manter)" : "Senha"}</label>
+      <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} className={inputCls+" mb-4"} />
+      <label className="block text-sm text-slate-600 mb-1.5">Tipo de acesso</label>
+      <select value={role} onChange={(e)=>setRole(e.target.value)} className={inputCls+" mb-2 bg-white"}>
+        <option value="colaborador">Colaborador</option>
+        <option value="admin">Administrador</option>
+      </select>
+      <p className="text-xs text-slate-400 mb-6">{role==="admin" ? "Acesso a tudo (cadastros, financeiro, relatórios)." : "Só lança e consulta agendamentos."}</p>
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className={btnGhost}>Cancelar</button>
+        <button onClick={save} disabled={saving || !name || !username} className={btnPrimary}>{saving?"Salvando...":"Salvar"}</button>
+      </div>
+    </Modal>
+  );
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(tokenKey));
   const [user, setUser] = useState(null);
@@ -1019,6 +1086,7 @@ function App() {
       {page==="servicos" && <Servicos token={token} user={user} />}
       {page==="tipos" && <Tipos token={token} user={user} />}
       {page==="mais" && <Mais user={user} setPage={setPage} />}
+      {page==="usuarios" && <Usuarios token={token} user={user} />}
       {page==="config" && <div className="text-slate-400 text-sm">Mensagens automaticas: em breve (Fase 3).</div>}
     </Layout>
   );

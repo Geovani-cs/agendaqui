@@ -16,9 +16,10 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
+        $tenantId = $request->user()->tenant_id;
         $data = $request->validate([
             'name' => ['required', 'string'],
-            'username' => ['required', 'string', 'unique:users,username'],
+            'username' => ['required', 'string', Rule::unique('users', 'username')->where(fn ($q) => $q->where('tenant_id', $tenantId))],
             'password' => ['required', 'string', 'min:4'],
             'role' => ['required', Rule::in(['admin', 'colaborador'])],
         ]);
@@ -27,9 +28,10 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
+        $tenantId = $request->user()->tenant_id;
         $data = $request->validate([
             'name' => ['required', 'string'],
-            'username' => ['required', 'string', 'unique:users,username,' . $user->id],
+            'username' => ['required', 'string', Rule::unique('users', 'username')->where(fn ($q) => $q->where('tenant_id', $tenantId))->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:4'],
             'role' => ['required', Rule::in(['admin', 'colaborador'])],
         ]);
@@ -42,8 +44,9 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
-        if (User::count() <= 1) {
-            abort(422, 'Não é possível excluir o único usuário.');
+        // Não deixa remover o último administrador (senão ninguém gerencia o ambiente).
+        if ($user->role === 'admin' && User::where('role', 'admin')->count() <= 1) {
+            abort(422, 'Não é possível excluir o único administrador.');
         }
         $user->delete();
         return response()->noContent();
