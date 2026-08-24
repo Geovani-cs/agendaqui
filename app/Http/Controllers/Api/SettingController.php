@@ -19,6 +19,7 @@ class SettingController extends Controller
             'company_name' => ['required', 'string'],
             'company_pix' => ['nullable', 'string'],
             'message_scheduling' => ['nullable', 'string'],
+            'message_rescheduling' => ['nullable', 'string'],
             'message_completion' => ['nullable', 'string'],
         ]);
         $setting = Setting::current();

@@ -1063,6 +1063,49 @@ function UsuarioForm({ token, usuario, onClose, onSaved }) {
   );
 }
 
+function Configuracoes({ token, user }) {
+  const [data, setData] = useState(null); const [error, setError] = useState(""); const [saving, setSaving] = useState(false); const [saved, setSaved] = useState(false);
+  useEffect(()=>{ api("/settings",{token}).then(setData).catch(e=>setError(firstError(e,"Erro ao carregar."))); }, []);
+  function set(k,v){ setData({...data, [k]: v}); setSaved(false); }
+  async function save(){
+    setSaving(true); setError(""); setSaved(false);
+    try{ const r = await api("/settings",{method:"PUT",token,body:{ company_name:data.company_name||"", company_pix:data.company_pix||"", message_scheduling:data.message_scheduling||"", message_rescheduling:data.message_rescheduling||"", message_completion:data.message_completion||"" }}); setData(r); setSaved(true); }
+    catch(e){ setError(firstError(e,"Erro ao salvar.")); } finally { setSaving(false); }
+  }
+  if(!data) return <div className="text-slate-400 text-sm">Carregando...</div>;
+  const fld = (label, key, rows, hint) => (
+    <div className="mb-4">
+      <label className="block text-sm text-slate-600 mb-1.5">{label}</label>
+      {rows ? <textarea value={data[key]||""} onChange={(e)=>set(key,e.target.value)} rows={rows} className={inputCls+" resize-none"} />
+            : <input value={data[key]||""} onChange={(e)=>set(key,e.target.value)} className={inputCls} />}
+      {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
+    </div>
+  );
+  const ph = "Use: {nome} {empresa} {data} {hora} {servico} {valor} {pix}";
+  return (
+    <div>
+      <h2 className="text-lg font-semibold text-slate-800 mb-1">Configurações</h2>
+      <p className="text-sm text-slate-500 mb-4">Dados do estabelecimento e mensagens automáticas do WhatsApp.</p>
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 mb-4">
+        {fld("Nome do estabelecimento","company_name")}
+        {fld("Chave PIX","company_pix",0,"Aparece na mensagem de conclusão ({pix}).")}
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 mb-4">
+        <div className="text-sm font-semibold text-slate-700 mb-1">Mensagens automáticas</div>
+        <p className="text-xs text-slate-400 mb-3">{ph}</p>
+        {fld("Agendamento","message_scheduling",4)}
+        {fld("Remarcação","message_rescheduling",4)}
+        {fld("Conclusão","message_completion",4)}
+      </div>
+      <div className="flex items-center justify-end gap-3 pb-2">
+        {saved && <span className="text-sm text-emerald-600">Salvo!</span>}
+        <button onClick={save} disabled={saving} className={btnPrimary}>{saving?"Salvando...":"Salvar"}</button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(tokenKey));
   const [user, setUser] = useState(null);
@@ -1087,7 +1130,7 @@ function App() {
       {page==="tipos" && <Tipos token={token} user={user} />}
       {page==="mais" && <Mais user={user} setPage={setPage} />}
       {page==="usuarios" && <Usuarios token={token} user={user} />}
-      {page==="config" && <div className="text-slate-400 text-sm">Mensagens automaticas: em breve (Fase 3).</div>}
+      {page==="config" && <Configuracoes token={token} user={user} />}
     </Layout>
   );
 }

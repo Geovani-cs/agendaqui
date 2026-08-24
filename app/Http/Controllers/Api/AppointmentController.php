@@ -141,6 +141,8 @@ class AppointmentController extends Controller
             }
         }
 
+        $oldStart = $appointment->scheduled_at;
+
         DB::transaction(function () use ($appointment, $data, $start, $request) {
             $appointment->update([
                 'owner_name' => $data['owner_name'],
@@ -154,7 +156,13 @@ class AppointmentController extends Controller
             $this->savePhotos($appointment, $request->input('photos', [])); // anexa fotos novas
         });
 
-        return $appointment->load(['services', 'collaborator', 'photos:id,appointment_id']);
+        $appointment->load(['services', 'collaborator', 'photos:id,appointment_id']);
+        $changed = optional($oldStart)->format('Y-m-d H:i') !== $start->format('Y-m-d H:i');
+
+        return response()->json([
+            'appointment' => $appointment,
+            'whatsapp' => $changed ? $this->reschedulingMessage($appointment) : null,
+        ]);
     }
 
     public function destroy(Appointment $appointment)
@@ -249,6 +257,19 @@ class AppointmentController extends Controller
             }
             $appointment->photos()->create(['path' => '', 'data' => $photo]);
         }
+    }
+
+    private function reschedulingMessage(Appointment $a): array
+    {
+        $setting = Setting::current();
+        $text = $setting->render('message_rescheduling', [
+            'nome' => $a->owner_name,
+            'empresa' => $setting->company_name,
+            'data' => $a->scheduled_at->format('d/m/Y'),
+            'hora' => $a->time,
+            'servico' => $a->services->pluck('name')->join(', '),
+        ]);
+        return ['phone' => $a->phone, 'text' => $text];
     }
 
     private function schedulingMessage(Appointment $a): array
