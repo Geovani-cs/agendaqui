@@ -14,6 +14,6 @@ class VehicleType extends Model
 
     public function services()
     {
-        return $this->hasMany(Service::class);
+        return $this->belongsToMany(Service::class, 'service_vehicle_type');
     }
 }

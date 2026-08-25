@@ -185,6 +185,13 @@ class AppointmentController extends Controller
         return $appointment->load(['services', 'collaborator']);
     }
 
+    // Reabre um agendamento concluido/cancelado, voltando para "aguardando".
+    public function reopen(Appointment $appointment)
+    {
+        $appointment->update(['status' => 'aguardando']);
+        return $appointment->load(['services', 'collaborator']);
+    }
+
     // Conclui o serviço, registra o colaborador e a comissão (snapshot).
     public function complete(Request $request, Appointment $appointment)
     {

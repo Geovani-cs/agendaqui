@@ -10,12 +10,12 @@ class Service extends Model
 {
     use BelongsToTenant;
 
-    protected $fillable = ['cod', 'vehicle_type_id', 'name', 'value', 'execution_time'];
+    protected $fillable = ['cod', 'name', 'value', 'execution_time'];
     protected $casts = ['value' => 'decimal:2', 'execution_time' => 'integer'];
 
-    public function vehicleType()
+    public function vehicleTypes()
     {
-        return $this->belongsTo(VehicleType::class);
+        return $this->belongsToMany(VehicleType::class, 'service_vehicle_type');
     }
 
     public function collaborators()

@@ -31,6 +31,7 @@ Route::middleware(['auth:sanctum', 'identify.tenant'])->group(function () {
     Route::post('/appointments/{appointment}/start', [AppointmentController::class, 'start']);
     Route::post('/appointments/{appointment}/complete', [AppointmentController::class, 'complete']);
     Route::post('/appointments/{appointment}/cancel', [AppointmentController::class, 'cancel']);
+    Route::post('/appointments/{appointment}/reopen', [AppointmentController::class, 'reopen']);
 
     // Despesas
     Route::get('/expenses', [ExpenseController::class, 'index']);
